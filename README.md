@@ -22,7 +22,7 @@ python oauth_proxy.py
 
 3. **Test the system**:
 ```bash
-python test_client.py
+python scripts/create_channel.py
 ```
 
 ## Architecture
@@ -104,7 +104,7 @@ DEBUG=true                   # Debug mode (default: false)
 5. **Turn-based Play**: Players post moves, bot enforces rules
 6. **Commitment Reveal**: Bot reveals target with proof
 
-## Files
+## Project Structure
 
 ```
 mcp-multiplayer/
@@ -114,8 +114,14 @@ mcp-multiplayer/
 ├── multiplayer_server.py    # FastMCP server
 ├── oauth_proxy.py           # OAuth authentication layer
 ├── start_servers.py         # Development server launcher
-├── test_client.py           # Integration test client
+├── scripts/                 # Live system interaction scripts
+│   ├── create_channel.py         # Channel creation
+│   ├── session_test.py           # Session continuity testing
+│   └── README.md                  # Scripts documentation
 └── tests/                   # Test suite
+    ├── test_oauth_mcp_flow.py     # OAuth + MCP integration tests
+    ├── test_channel_manager.py    # Unit tests
+    └── test_bot_manager.py        # Unit tests
 ```
 
 ## Testing
@@ -125,12 +131,50 @@ Run the full test suite:
 pytest tests/ -v
 ```
 
-Test the live system:
+Test specific components:
 ```bash
-python test_client.py
+# OAuth + MCP integration tests (requires running servers)
+pytest tests/test_oauth_mcp_flow.py -v
+
+# Unit tests (standalone)
+pytest tests/test_channel_manager.py tests/test_bot_manager.py -v
+```
+
+Interact with live system:
+```bash
+# Channel creation script
+python scripts/create_channel.py
+
+# Session continuity testing
+python scripts/session_test.py
 ```
 
 ## MCP Client Integration
+
+### Session Handling (CRITICAL)
+
+**⚠️ Important**: MCP multiplayer requires proper session continuity. When making MCP requests:
+
+1. **Capture the session ID**: The first successful MCP response includes an `mcp-session-id` header
+2. **Reuse the session ID**: Include this header in ALL subsequent requests to maintain session continuity
+3. **Session binding**: Channels, joins, and messages are tied to your session ID
+
+**Example session handling**:
+```python
+# First request (initialize)
+response = requests.post(url, json=mcp_request, headers=auth_headers)
+session_id = response.headers.get('mcp-session-id')
+
+# All subsequent requests
+headers['mcp-session-id'] = session_id
+response = requests.post(url, json=next_request, headers=headers)
+```
+
+**Without proper session handling**: You'll get "Missing session ID" errors or be unable to join channels you created.
+
+See `scripts/create_channel.py` for a complete working example.
+
+### Claude Configuration
 
 For Claude clients, configure MCP server as:
 
@@ -177,6 +221,20 @@ lsof -ti:9201 | xargs kill
 
 ### OAuth Token Issues
 For testing without HTTPS, the system sets `AUTHLIB_INSECURE_TRANSPORT=true` automatically.
+
+### MCP Session Errors
+If you get "Missing session ID" or "INVITE_INVALID" errors:
+```bash
+# ✗ Wrong: Each request gets a new session ID
+curl -X POST https://127.0.0.1:9100/ -H "Authorization: Bearer TOKEN" -d '...'
+
+# ✓ Correct: Reuse the mcp-session-id from first response
+curl -X POST https://127.0.0.1:9100/ -H "Authorization: Bearer TOKEN" -H "mcp-session-id: SESSION" -d '...'
+```
+
+**Root cause**: FastMCP generates a new session ID for each request unless you explicitly provide one. Multiplayer channels require session continuity.
+
+**Solution**: Use `scripts/create_channel.py` as a reference for proper session handling.
 
 ### Test Client Errors
 Make sure both servers are running before running the test client:
