@@ -366,6 +366,61 @@ def get_channel_info(channel_id: str) -> Dict[str, Any]:
         raise ValueError(f"INTERNAL_ERROR: Failed to get channel info")
 
 @mcp.tool()
+def get_bot_code(channel_id: str, bot_id: str) -> Dict[str, Any]:
+    """
+    Retrieve bot code and manifest for verification and common knowledge.
+
+    This enables clients to verify the code_hash posted in bot:attach messages,
+    establishing trust through transparency.
+
+    Args:
+        channel_id: The channel ID
+        bot_id: The bot ID (from bot:attach message)
+
+    Returns:
+        Bot code, manifest, and hashes for verification
+    """
+    try:
+        session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
+
+        # Verify channel membership
+        if not channel_manager._is_member(channel_id, session_id):
+            raise ValueError("NOT_MEMBER: Not a channel member")
+
+        # Get bot instance
+        if channel_id not in bot_manager.bot_instances:
+            raise ValueError("CHANNEL_NOT_FOUND")
+
+        if bot_id not in bot_manager.bot_instances[channel_id]:
+            raise ValueError("BOT_NOT_FOUND")
+
+        bot_instance = bot_manager.bot_instances[channel_id][bot_id]
+        bot_def = bot_instance.bot_def
+
+        # Compute hashes for verification
+        code_hash = bot_manager.compute_code_hash(bot_def)
+        manifest_hash = bot_manager.compute_manifest_hash(bot_def.manifest or {})
+
+        return {
+            "bot_id": bot_id,
+            "name": bot_def.name,
+            "version": bot_def.version,
+            "code_ref": bot_def.code_ref,
+            "inline_code": bot_def.inline_code,
+            "manifest": bot_def.manifest,
+            "code_hash": code_hash,
+            "manifest_hash": manifest_hash
+        }
+
+    except ValueError as e:
+        raise ValueError(str(e))
+    except Exception as e:
+        logger.error(f"Error getting bot code: {e}", exc_info=True)
+        raise ValueError(f"INTERNAL_ERROR: Failed to get bot code: {e}")
+
+@mcp.tool()
 def list_channels() -> Dict[str, Any]:
     """
     List all available channels (debug endpoint).

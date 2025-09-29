@@ -234,7 +234,7 @@ class BotManager:
 
         return bot_class
 
-    def _compute_code_hash(self, bot_def: BotDefinition) -> str:
+    def compute_code_hash(self, bot_def: BotDefinition) -> str:
         """Compute SHA256 hash of bot code."""
         if bot_def.inline_code:
             content = bot_def.inline_code
@@ -243,10 +243,17 @@ class BotManager:
 
         return "sha256:" + hashlib.sha256(content.encode()).hexdigest()
 
-    def _compute_manifest_hash(self, manifest: Dict[str, Any]) -> str:
+    def compute_manifest_hash(self, manifest: Dict[str, Any]) -> str:
         """Compute SHA256 hash of manifest."""
         manifest_json = json.dumps(manifest, sort_keys=True)
         return "sha256:" + hashlib.sha256(manifest_json.encode()).hexdigest()
+
+    # Keep private aliases for backwards compatibility
+    def _compute_code_hash(self, bot_def: BotDefinition) -> str:
+        return self.compute_code_hash(bot_def)
+
+    def _compute_manifest_hash(self, manifest: Dict[str, Any]) -> str:
+        return self.compute_manifest_hash(manifest)
 
     def dispatch_message(self, channel_id: str, message: Dict[str, Any]):
         """Dispatch a message to all bots in the channel."""

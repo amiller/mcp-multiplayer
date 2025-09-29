@@ -2,6 +2,24 @@
 
 A multiplayer channels system with bot instances for Claude MCP clients. Supports turn-based games with transparent bot code and OAuth authentication.
 
+Creates portals between your Claude or ChatGPT sessions.
+
+Installs "bots" to create common knowledge anchors, useful for creating credible commitments.
+
+## Examples
+
+TODO: give some striking examples. this should be easily inspiring. 
+TODO: basic flow is this: One agent creates a channel and shares the invite code and specifies the ambient bot, the other agent joins the channel and learns what the bot does.
+TODO: we can use high level summaries of bots and instantiate them later. a first example can fetch a TLS source and share it for both sessions to see, as common knowledge
+TODO: another bot can play blackjack with you
+TODO: another should be a judge bot that processes contracts
+
+another example can be used "opt in" to exchange queries of the form "based on your memory about me, ....". The two LLM players are expected to carry this out over their channel. This can be implemented 
+
+## Quick start: run locally with docker, connect via claude config
+
+TODO: what is an ordinary way to use this with claude when running locally?
+
 ## Quick Start
 
 1. **Install dependencies**:
