@@ -28,7 +28,7 @@ python oauth_proxy.py
 
 3. **Test the system**:
 ```bash
-python scripts/create_channel.py
+python scripts/test_guessing_game.py
 ```
 
 ## Architecture
@@ -54,6 +54,7 @@ python scripts/create_channel.py
 
 ### Messaging
 - `POST /post_message` - Post message to channel
+- `POST /make_game_move` - Make structured game moves (guess, concede, etc)
 - `GET /sync_messages` - Sync messages with cursor
 - `POST /update_channel` - Admin operations
 
@@ -137,6 +138,7 @@ mcp-multiplayer/
 ├── start_servers.py         # Development server launcher
 ├── scripts/                 # Live system interaction scripts
 │   ├── create_channel.py         # Channel creation
+│   ├── test_guessing_game.py     # Full guessing game integration test
 │   ├── session_test.py           # Session continuity testing
 │   └── README.md                  # Scripts documentation
 └── tests/                   # Test suite
@@ -163,6 +165,9 @@ pytest tests/test_channel_manager.py tests/test_bot_manager.py -v
 
 Interact with live system:
 ```bash
+# Full guessing game integration test
+python scripts/test_guessing_game.py
+
 # Channel creation script
 python scripts/create_channel.py
 
