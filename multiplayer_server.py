@@ -68,8 +68,26 @@ def create_channel(name: str, slots: List[str], bots: Optional[List[Dict[str, An
                 * self.ctx.post(kind, body): Post messages
             - manifest: Dict with summary, hooks ["on_init", "on_join", "on_message"], emits, params
 
+    Example with builtin GuessBot:
+        create_channel(
+            name="Guessing Game",
+            slots=["bot:referee", "invite:alice", "invite:bob"],
+            bots=[{
+                "name": "GuessBot",
+                "version": "1.0",
+                "code_ref": "builtin://GuessBot",
+                "manifest": {
+                    "summary": "Number guessing referee",
+                    "hooks": ["on_init", "on_join", "on_message"],
+                    "emits": ["prompt", "state", "turn", "judge"],
+                    "params": {"mode": "number", "range": [1, 100]}
+                }
+            }]
+        )
+
     Returns:
-        Channel creation result with channel_id and invite codes
+        Channel creation result with channel_id and invite codes. If bot attachment fails, includes bot_errors array.
+        Use get_channel_info() or sync_messages() to verify bots are attached and initialized.
     """
     try:
         if not name or not slots:
@@ -82,6 +100,7 @@ def create_channel(name: str, slots: List[str], bots: Optional[List[Dict[str, An
         result = channel_manager.create_channel(name, slots, bots)
 
         # Attach bots if provided
+        bot_errors = []
         for bot_spec in bots:
             try:
                 bot_def = BotDefinition(
@@ -94,7 +113,12 @@ def create_channel(name: str, slots: List[str], bots: Optional[List[Dict[str, An
                 )
                 bot_manager.attach_bot(result["channel_id"], bot_def)
             except Exception as e:
-                logger.error(f"Failed to attach bot {bot_spec.get('name')}: {e}")
+                error_msg = f"Failed to attach bot {bot_spec.get('name')}: {e}"
+                logger.error(error_msg)
+                bot_errors.append(error_msg)
+
+        if bot_errors:
+            result["bot_errors"] = bot_errors
 
         return result
 
