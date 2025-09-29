@@ -61,6 +61,50 @@ python scripts/test_guessing_game.py
 ### Bot Management
 - `POST /attach_bot` - Attach bot to channel
 
+## Bot Code: Builtin vs Inline
+
+Bots can be loaded in two ways:
+
+### 1. Builtin Bots (`code_ref`)
+Reference pre-loaded bot implementations:
+```json
+{
+  "bots": [{
+    "name": "GuessBot",
+    "version": "1.0",
+    "code_ref": "builtin://GuessBot",
+    "manifest": { ... }
+  }]
+}
+```
+
+### 2. Inline Code (`inline_code`)
+**Key Feature**: Provide bot code directly in the channel creation request for full transparency and customization:
+
+```json
+{
+  "bots": [{
+    "name": "EchoBot",
+    "version": "1.0",
+    "inline_code": "class EchoBot:\n    def __init__(self, ctx, params):\n        self.ctx = ctx\n    def on_message(self, msg):\n        if msg.get('kind') == 'user':\n            self.ctx.post('bot', {'echo': msg.get('body')})",
+    "manifest": {
+      "summary": "Echoes messages",
+      "hooks": ["on_message"],
+      "emits": ["echo"]
+    }
+  }]
+}
+```
+
+**Bot API**:
+- `__init__(self, ctx, params)` - Initialize with context and params
+- `on_init()` - Called when bot attaches
+- `on_join(player_id)` - Called when player joins
+- `on_message(msg)` - Called on new messages
+- `self.ctx.post(kind, body)` - Post messages to channel
+
+**Test**: `python scripts/test_inline_bot.py`
+
 ## Example: Creating a Guessing Game
 
 ```bash
