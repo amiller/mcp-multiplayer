@@ -27,7 +27,7 @@ def main():
     # Start MCP server in background
     mcp_process = subprocess.Popen([
         sys.executable, "multiplayer_server.py"
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ])
 
     # Give MCP server time to start
     time.sleep(2)

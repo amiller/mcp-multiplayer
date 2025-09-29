@@ -55,3 +55,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Test environment config
+.env.scripts

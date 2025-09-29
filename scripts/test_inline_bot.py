@@ -46,17 +46,7 @@ class EchoBot:
         create_resp = client.call_tool("create_channel", {
             "name": "Echo Test",
             "slots": ["bot:echo", "invite:player1"],
-            "bots": [{
-                "name": "EchoBot",
-                "version": "1.0",
-                "inline_code": inline_code,
-                "manifest": {
-                    "summary": "Echoes messages back to channel",
-                    "hooks": ["on_init", "on_join", "on_message"],
-                    "emits": ["ready", "welcome", "echo"],
-                    "params": {}
-                }
-            }]
+            "bot_code": inline_code
         })
 
         channel_id = create_resp["channel_id"]

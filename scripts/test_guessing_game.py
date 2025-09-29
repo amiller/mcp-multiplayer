@@ -39,17 +39,7 @@ def test_guessing_game():
         create_resp = alice.call_tool("create_channel", {
             "name": "Test Guessing Game",
             "slots": ["bot:guess-referee", "invite:alice", "invite:bob"],
-            "bots": [{
-                "name": "GuessBot",
-                "version": "1.0",
-                "code_ref": "builtin://GuessBot",
-                "manifest": {
-                    "summary": "Turn-based number guessing referee",
-                    "hooks": ["on_init", "on_join", "on_message"],
-                    "emits": ["prompt", "state", "turn", "judge"],
-                    "params": {"mode": "number", "range": [1, 100]}
-                }
-            }]
+            "bot_preset": "GuessBot"
         })
 
         channel_id = create_resp["channel_id"]
@@ -98,10 +88,8 @@ def test_guessing_game():
             body = msg.get('body', {})
             print(f"   📨 {sender} ({msg['kind']}): {body}")
 
-        # Look for bot feedback (higher/lower)
-        bot_responded = any('higher' in str(msg.get('body', '')).lower() or
-                           'lower' in str(msg.get('body', '')).lower() or
-                           'correct' in str(msg.get('body', '')).lower()
+        # Look for bot feedback (high/low/correct)
+        bot_responded = any(msg.get('kind') == 'bot' and msg.get('body', {}).get('type') == 'judge'
                            for msg in recent_messages)
 
         if bot_responded:

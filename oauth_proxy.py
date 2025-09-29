@@ -482,6 +482,9 @@ def proxy_to_mcp(path):
         logger.info(f"   JSON: {request.get_json() if request.is_json else None}")
         logger.info(f"   Data: {request.get_data() if not request.is_json else None}")
 
+        # Check if this is a streaming request (SSE)
+        is_streaming = request.headers.get('Accept') == 'text/event-stream'
+
         # Make the request to MCP server
         resp = requests.request(
             method=request.method,
@@ -491,19 +494,28 @@ def proxy_to_mcp(path):
             data=request.get_data() if not request.is_json else None,
             params=request.args,
             cookies=request.cookies,
-            allow_redirects=False
+            allow_redirects=False,
+            stream=is_streaming
         )
 
-        # DEBUG: Log the response
-        logger.info(f"🔙 MCP RESPONSE: {resp.status_code} | Content: {resp.text[:200]}...")
-
-        # Build response
+        # Build response headers
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         response_headers = [(name, value) for (name, value) in resp.headers.items()
                           if name.lower() not in excluded_headers]
 
-        response = Response(resp.content, resp.status_code, response_headers)
-        return response
+        if is_streaming:
+            # For SSE, stream the response
+            def generate():
+                for chunk in resp.iter_content(chunk_size=None):
+                    if chunk:
+                        yield chunk
+            logger.info(f"🔙 MCP SSE STREAM STARTED: {resp.status_code}")
+            return Response(generate(), resp.status_code, response_headers)
+        else:
+            # For regular requests, return full response
+            logger.info(f"🔙 MCP RESPONSE: {resp.status_code} | Content: {resp.text[:200]}...")
+            response = Response(resp.content, resp.status_code, response_headers)
+            return response
 
     except Exception as e:
         logger.error(f"PROXY ERROR: {client_info['client_name'] if client_info else 'Unknown'} | Error: {str(e)}")

@@ -49,52 +49,87 @@ def health_check() -> str:
     return f"Multiplayer server healthy at {datetime.utcnow().isoformat()}"
 
 @mcp.tool()
-def create_channel(name: str, slots: List[str], bots: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+def create_channel(
+    name: str,
+    slots: List[str],
+    bot_code: Optional[str] = None,
+    bot_preset: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create a new multiplayer channel with specified slots.
 
     Args:
         name: Channel name
         slots: List of slot types like ["bot:guess-referee", "invite:player1", "invite:player2"]
-        bots: Optional list of bot definitions. Each bot dict has:
-            - name: Bot name
-            - version: Bot version (default "1.0")
-            - code_ref: Reference like "builtin://GuessBot" OR
-            - inline_code: Python code defining bot class with:
-                * __init__(self, ctx, params): Initialize
-                * on_init(): Called when bot attaches
-                * on_join(player_id): Called when player joins
-                * on_message(msg): Called on new messages
-                * self.ctx.post(kind, body): Post messages
-            - manifest: Dict with summary, hooks ["on_init", "on_join", "on_message"], emits, params
+        bot_code: Optional Python code for inline bot. Must define a class with:
+            - __init__(self, ctx, params): Initialize with context
+            - on_init(): Called when bot attaches
+            - on_join(player_id): Called when player joins
+            - on_message(msg): Called on new messages
+            - self.ctx.post(kind, body): Post messages to channel
+        bot_preset: Optional preset bot name like "GuessBot" (ignored if bot_code provided)
 
-    Example with builtin GuessBot:
+    Example with preset:
         create_channel(
             name="Guessing Game",
             slots=["bot:referee", "invite:alice", "invite:bob"],
-            bots=[{
-                "name": "GuessBot",
-                "version": "1.0",
-                "code_ref": "builtin://GuessBot",
-                "manifest": {
-                    "summary": "Number guessing referee",
-                    "hooks": ["on_init", "on_join", "on_message"],
-                    "emits": ["prompt", "state", "turn", "judge"],
-                    "params": {"mode": "number", "range": [1, 100]}
-                }
-            }]
+            bot_preset="GuessBot"
+        )
+
+    Example with inline code:
+        create_channel(
+            name="Echo Game",
+            slots=["bot:echo", "invite:player"],
+            bot_code='''class EchoBot:
+    def __init__(self, ctx, params):
+        self.ctx = ctx
+    def on_init(self):
+        self.ctx.post('system', {'text': 'Echo ready'})
+    def on_message(self, msg):
+        if msg.get('kind') == 'user':
+            self.ctx.post('echo', {'text': msg['body']['text']})'''
         )
 
     Returns:
         Channel creation result with channel_id and invite codes. If bot attachment fails, includes bot_errors array.
-        Use get_channel_info() or sync_messages() to verify bots are attached and initialized.
     """
     try:
         if not name or not slots:
             raise ValueError("name and slots required")
 
-        if bots is None:
-            bots = []
+        # Build bots list from simple parameters
+        bots = []
+        if bot_code:
+            bots.append({
+                "name": "CustomBot",
+                "version": "1.0",
+                "inline_code": bot_code,
+                "manifest": {
+                    "summary": "Custom inline bot",
+                    "hooks": ["on_init", "on_join", "on_message"],
+                    "emits": ["system"],
+                    "params": {}
+                }
+            })
+        elif bot_preset:
+            # Preset mappings
+            presets = {
+                "GuessBot": {
+                    "name": "GuessBot",
+                    "version": "1.0",
+                    "code_ref": "builtin://GuessBot",
+                    "manifest": {
+                        "summary": "Number guessing referee",
+                        "hooks": ["on_init", "on_join", "on_message"],
+                        "emits": ["prompt", "state", "turn", "judge"],
+                        "params": {"mode": "number", "range": [1, 100]}
+                    }
+                }
+            }
+            if bot_preset in presets:
+                bots.append(presets[bot_preset])
+            else:
+                raise ValueError(f"Unknown bot preset: {bot_preset}")
 
         # Create channel
         result = channel_manager.create_channel(name, slots, bots)
