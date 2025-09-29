@@ -6,10 +6,11 @@ Shared MCP client functionality for all scripts
 import json
 import requests
 import base64
+import os
 from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
 
-from config import get_base_url, get_client_name, should_verify_ssl
+from config import get_base_url, get_client_name, should_verify_ssl, get_token_file
 
 disable_warnings(InsecureRequestWarning)
 
@@ -18,11 +19,40 @@ class MCPClient:
         self.base_url = get_base_url()
         self.client_name = get_client_name()
         self.verify_ssl = should_verify_ssl()
+        self.token_file = get_token_file()
         self.token = None
         self.headers = None
 
+    def _load_token(self):
+        """Load token from file if it exists"""
+        if os.path.exists(self.token_file):
+            try:
+                with open(self.token_file, 'r') as f:
+                    data = json.load(f)
+                    if data.get('base_url') == self.base_url:
+                        self.token = data.get('access_token')
+                        return True
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return False
+
+    def _save_token(self, token):
+        """Save token to file"""
+        dirname = os.path.dirname(self.token_file)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        with open(self.token_file, 'w') as f:
+            json.dump({
+                'base_url': self.base_url,
+                'access_token': token
+            }, f)
+
     def get_oauth_token(self):
         """Get OAuth token for authentication"""
+        # Try loading from file first
+        if self._load_token():
+            return self.token
+
         # Register client
         reg_resp = requests.post(f'{self.base_url}/register', json={
             'client_name': self.client_name,
@@ -45,6 +75,7 @@ class MCPClient:
             raise Exception(f"Token request failed: {token_resp.status_code} {token_resp.text}")
 
         self.token = token_resp.json()['access_token']
+        self._save_token(self.token)
         return self.token
 
     def initialize_session(self):
@@ -148,8 +179,11 @@ class MCPClient:
     def connect(self):
         """Full connection flow: OAuth + session initialization"""
         print(f"Connecting to {self.base_url}...")
-        self.get_oauth_token()
-        print("✅ OAuth token obtained")
+        if self._load_token():
+            print("Using cached OAuth token")
+        else:
+            self.get_oauth_token()
+            print("OAuth token obtained and cached")
         self.initialize_session()
-        print("✅ MCP session initialized")
+        print("MCP session initialized")
         return self

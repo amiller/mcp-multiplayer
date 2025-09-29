@@ -38,7 +38,7 @@ def main():
             }]
         })
 
-        print(f"\n✅ SUCCESS! Created channel:")
+        print("\nSUCCESS! Created channel:")
         print(f"   Channel ID: {channel_data['channel_id']}")
         print(f"   Invite codes:")
         for i, invite in enumerate(channel_data['invites']):
@@ -46,7 +46,7 @@ def main():
         print("\nYou can now use these invite codes!")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         return 1
 
     return 0
