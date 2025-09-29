@@ -36,6 +36,30 @@ logger = logging.getLogger(__name__)
 from pathlib import Path
 import os
 
+def get_base_url(request):
+    """
+    Generate the correct base URL for OAuth endpoints, handling:
+    1. Direct HTTP access (local dev)
+    2. Direct HTTPS access (USE_SSL=true)
+    3. HTTPS proxy with internal HTTP (dstack/reverse proxy)
+    """
+    domain = os.getenv('DOMAIN', 'localhost')
+    use_ssl = os.getenv('USE_SSL', 'false').lower() == 'true'
+
+    # If DOMAIN is set to a real domain (not localhost), assume HTTPS proxy
+    if domain != 'localhost' and '.' in domain:
+        return f"https://{domain}"
+
+    # For localhost, respect USE_SSL setting
+    scheme = 'https' if use_ssl else 'http'
+
+    # For localhost, use the actual host from request
+    if domain == 'localhost':
+        return f"{scheme}://{request.host}"
+
+    # Fallback to domain setting
+    return f"{scheme}://{domain}"
+
 # Simple in-memory storage with persistence
 DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
 DATA_DIR.mkdir(exist_ok=True)
@@ -267,11 +291,12 @@ def verify_token(token):
 @app.route('/.well-known/oauth-authorization-server')
 def oauth_authorization_server():
     logger.info("🔍 OAUTH DISCOVERY: Client requesting authorization server metadata")
+    base_url = get_base_url(request)
     return jsonify({
-        "issuer": request.host_url.rstrip('/'),
-        "authorization_endpoint": request.host_url.rstrip('/') + "/oauth/authorize",
-        "token_endpoint": request.host_url.rstrip('/') + "/token",
-        "registration_endpoint": request.host_url.rstrip('/') + "/register",
+        "issuer": base_url,
+        "authorization_endpoint": base_url + "/oauth/authorize",
+        "token_endpoint": base_url + "/token",
+        "registration_endpoint": base_url + "/register",
         "grant_types_supported": ["authorization_code", "client_credentials"],
         "response_types_supported": ["code"],
         "code_challenge_methods_supported": ["S256"],
@@ -280,9 +305,10 @@ def oauth_authorization_server():
 
 @app.route('/.well-known/oauth-protected-resource')
 def oauth_protected_resource():
+    base_url = get_base_url(request)
     return jsonify({
-        "resource": request.host_url.rstrip('/'),
-        "authorization_servers": [request.host_url.rstrip('/')]
+        "resource": base_url,
+        "authorization_servers": [base_url]
     })
 
 # OAuth endpoints
