@@ -2,14 +2,12 @@ services:
   mcp-multiplayer:
     build: .
     ports:
-      - "9100:9100"
-      - "9201:9201"
-    volumes:
-      - ./certs:/app/certs:ro
+      - "8100:8100"
+      - "8201:8201"
     environment:
-      - DOMAIN=${DOMAIN:-mcp.ln.soc1024.com}
-      - USE_SSL=true
+      - DOMAIN=${DOMAIN:-localhost}
+      - USE_SSL=false
       - PROXY_HOST=0.0.0.0
-      - PROXY_PORT=9100
+      - PROXY_PORT=8100
       - MCP_HOST=0.0.0.0
-      - MCP_PORT=9201
+      - MCP_PORT=8201

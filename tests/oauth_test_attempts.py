@@ -11,10 +11,10 @@ from urllib3.exceptions import InsecureRequestWarning
 
 disable_warnings(InsecureRequestWarning)
 
-BASE_URL = "https://mcp.ln.soc1024.com"
+BASE_URL = "https://your-domain.com"
 
 def main():
-    print("🔐 Testing OAuth and MCP multiplayer via https://mcp.ln.soc1024.com")
+    print("🔐 Testing OAuth and MCP multiplayer via https://your-domain.com")
     print("=" * 60)
 
     # Test OAuth registration
@@ -76,7 +76,7 @@ def main():
     print("\n" + "=" * 60)
     print("🎉 ALL TESTS PASSED!")
     print("=" * 60)
-    print("✅ OAuth endpoints working via https://mcp.ln.soc1024.com")
+    print("✅ OAuth endpoints working via https://your-domain.com")
     print("✅ Domain routing configured correctly")
     print("✅ MCP server accessible through HTTPS proxy")
     print("✅ SSL certificates working")
@@ -88,7 +88,7 @@ def main():
     print("      Player 2: inv_GUsdDQL8vc2ojG-cwy47LA")
     print("      Player 3: inv_yIBHnxDNDR39YyYEs1AtDg")
     print("\n🚀 Ready for testing! Users can now:")
-    print("   1. Connect to https://mcp.ln.soc1024.com via Claude browser")
+    print("   1. Connect to https://your-domain.com via Claude browser")
     print("   2. Use the OAuth flow to authenticate")
     print("   3. Join the channel using any of the invite codes above")
     return True

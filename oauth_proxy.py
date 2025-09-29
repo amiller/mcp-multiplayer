@@ -223,7 +223,8 @@ client_registration = MyClientRegistrationEndpoint()
 authorization.register_endpoint(client_registration)
 
 # Target MCP server
-MCP_SERVER_URL = "http://127.0.0.1:9201/mcp"
+MCP_PORT = os.getenv("MCP_PORT", "9201")
+MCP_SERVER_URL = f"http://127.0.0.1:{MCP_PORT}/mcp"
 
 def verify_token(token):
     """Verify the access token"""

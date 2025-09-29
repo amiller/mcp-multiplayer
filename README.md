@@ -11,7 +11,13 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. **Start the servers**:
+2. **Start with Docker** (recommended):
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+**OR start manually**:
 ```bash
 # Terminal 1: MCP Server
 python multiplayer_server.py
@@ -28,9 +34,9 @@ python scripts/create_channel.py
 ## Architecture
 
 ```
-┌─────────────────┐    HTTPS/OAuth    ┌─────────────────┐    HTTP    ┌─────────────────┐
+┌─────────────────┐    HTTP/OAuth     ┌─────────────────┐    HTTP    ┌─────────────────┐
 │   Claude AI     │ ──────────────────▶│   OAuth Proxy   │ ──────────▶│   MCP Server    │
-│   (sessions)    │                    │   (Port 9100)   │            │   (Port 9201)   │
+│   (sessions)    │                    │   (Port 8100)   │            │   (Port 8201)   │
 └─────────────────┘                    └─────────────────┘            └─────────────────┘
 ```
 
@@ -57,7 +63,7 @@ python scripts/create_channel.py
 ## Example: Creating a Guessing Game
 
 ```bash
-curl -X POST http://127.0.0.1:9100/create_channel \
+curl -X POST http://127.0.0.1:8100/create_channel \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -79,21 +85,33 @@ curl -X POST http://127.0.0.1:9100/create_channel \
 
 ## Configuration
 
-Environment variables in `.env`:
+### Docker Configuration (`.env`)
+Copy `.env.example` to `.env` for Docker setup:
 
 ```bash
-DOMAIN=mcp.ln.soc1024.com    # Domain for SSL certificates
-USE_SSL=true                 # Enable HTTPS
-PROXY_PORT=9100              # OAuth proxy port
-MCP_PORT=9201                # MCP server port
+DOMAIN=localhost             # Local development domain
+USE_SSL=false                # HTTP for local development
+PROXY_PORT=8100              # OAuth proxy port
+MCP_PORT=8201                # MCP server port
+PROXY_HOST=0.0.0.0           # Bind to all interfaces in container
+MCP_HOST=0.0.0.0             # Bind to all interfaces in container
 ```
 
-Additional optional variables:
+### Script Configuration (`.env.scripts`)
+Controls which endpoint the scripts connect to:
+
 ```bash
-MCP_HOST=127.0.0.1           # MCP server host (default)
-PROXY_HOST=127.0.0.1         # OAuth proxy host (default)
-DEBUG=true                   # Debug mode (default: false)
+# For local Docker development
+MCP_BASE_URL=http://127.0.0.1:8100
+
+# For remote production
+# MCP_BASE_URL=https://your-domain.com
+
+MCP_CLIENT_NAME=MCP Script Client
+MCP_VERIFY_SSL=false
 ```
+
+Switch between local and remote by commenting/uncommenting the `MCP_BASE_URL` lines.
 
 ## Game Flow
 
@@ -217,12 +235,12 @@ For Claude clients, configure MCP server as:
 ```json
 {
   "name": "MCP Multiplayer",
-  "url": "https://mcp.ln.soc1024.com",
+  "url": "https://your-domain.com",
   "auth": {
     "type": "oauth2",
-    "authorization_endpoint": "https://mcp.ln.soc1024.com/oauth/authorize",
-    "token_endpoint": "https://mcp.ln.soc1024.com/token",
-    "registration_endpoint": "https://mcp.ln.soc1024.com/register"
+    "authorization_endpoint": "https://your-domain.com/oauth/authorize",
+    "token_endpoint": "https://your-domain.com/token",
+    "registration_endpoint": "https://your-domain.com/register"
   }
 }
 ```
@@ -231,12 +249,12 @@ For local testing without domain:
 ```json
 {
   "name": "MCP Multiplayer Local",
-  "url": "https://127.0.0.1:9100",
+  "url": "http://127.0.0.1:8100",
   "auth": {
     "type": "oauth2",
-    "authorization_endpoint": "https://127.0.0.1:9100/oauth/authorize",
-    "token_endpoint": "https://127.0.0.1:9100/token",
-    "registration_endpoint": "https://127.0.0.1:9100/register"
+    "authorization_endpoint": "http://127.0.0.1:8100/oauth/authorize",
+    "token_endpoint": "http://127.0.0.1:8100/token",
+    "registration_endpoint": "http://127.0.0.1:8100/register"
   }
 }
 ```
@@ -251,8 +269,8 @@ ps aux | grep -E "(oauth_proxy|multiplayer_server)" | grep -v grep
 kill <process_id>
 
 # Or kill all Python processes using the ports
-lsof -ti:9100 | xargs kill
-lsof -ti:9201 | xargs kill
+lsof -ti:8100 | xargs kill
+lsof -ti:8201 | xargs kill
 ```
 
 ### OAuth Token Issues
@@ -262,10 +280,10 @@ For testing without HTTPS, the system sets `AUTHLIB_INSECURE_TRANSPORT=true` aut
 If you get "Missing session ID" or "INVITE_INVALID" errors:
 ```bash
 # ✗ Wrong: Each request gets a new session ID
-curl -X POST https://127.0.0.1:9100/ -H "Authorization: Bearer TOKEN" -d '...'
+curl -X POST http://127.0.0.1:8100/ -H "Authorization: Bearer TOKEN" -d '...'
 
 # ✓ Correct: Reuse the mcp-session-id from first response
-curl -X POST https://127.0.0.1:9100/ -H "Authorization: Bearer TOKEN" -H "mcp-session-id: SESSION" -d '...'
+curl -X POST http://127.0.0.1:8100/ -H "Authorization: Bearer TOKEN" -H "mcp-session-id: SESSION" -d '...'
 ```
 
 **Root cause**: FastMCP generates a new session ID for each request unless you explicitly provide one. Multiplayer channels require session continuity.
@@ -276,10 +294,10 @@ curl -X POST https://127.0.0.1:9100/ -H "Authorization: Bearer TOKEN" -H "mcp-se
 Make sure both servers are running before running the test client:
 ```bash
 # Check if servers are listening on correct ports
-netstat -tlnp | grep -E ":9100|:9201"
+netstat -tlnp | grep -E ":8100|:8201"
 
 # Check MCP server with proper MCP request
-curl http://127.0.0.1:9201/mcp -H "Content-Type: application/json" \
+curl http://127.0.0.1:8201/mcp -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```

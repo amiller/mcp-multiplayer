@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv('.env.scripts')
 
 # Configuration
-BASE_URL = os.getenv('MCP_BASE_URL', 'https://mcp.ln.soc1024.com')
+BASE_URL = os.getenv('MCP_BASE_URL', 'http://127.0.0.1:8100')
 CLIENT_NAME = os.getenv('MCP_CLIENT_NAME', 'MCP Script Client')
 VERIFY_SSL = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
 

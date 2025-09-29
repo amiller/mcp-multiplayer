@@ -6,22 +6,22 @@ These scripts provide a simple interface for interacting with MCP multiplayer ch
 
 Edit `.env.scripts` to switch between local Docker development and remote production endpoints:
 
-**For remote production (mcp.ln.soc1024.com):**
+**For remote production:**
 ```bash
 # Remote endpoint (production)
-MCP_BASE_URL=https://mcp.ln.soc1024.com
+MCP_BASE_URL=https://your-domain.com
 
 # Local endpoint (Docker development)
-# MCP_BASE_URL=https://127.0.0.1:9100
+# MCP_BASE_URL=http://127.0.0.1:8100
 ```
 
 **For local Docker development:**
 ```bash
 # Remote endpoint (production)
-# MCP_BASE_URL=https://mcp.ln.soc1024.com
+# MCP_BASE_URL=https://your-domain.com
 
 # Local endpoint (Docker development)
-MCP_BASE_URL=https://127.0.0.1:9100
+MCP_BASE_URL=http://127.0.0.1:8100
 ```
 
 ## Available Scripts

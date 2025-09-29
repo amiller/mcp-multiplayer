@@ -11,7 +11,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 disable_warnings(InsecureRequestWarning)
 
-BASE_URL = "https://mcp.ln.soc1024.com"
+BASE_URL = "https://your-domain.com"
 
 def get_oauth_token():
     """Get OAuth token"""
