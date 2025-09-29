@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""
+OAuth 2.1 proxy for MCP Multiplayer server
+Adapted from buildatool ssl_proxy.py
+"""
+
+import json
+import secrets
+import time
+import hashlib
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+from flask import Flask, request, jsonify, Response
+from authlib.oauth2 import OAuth2Error
+from authlib.oauth2.rfc6749 import grants
+from authlib.oauth2.rfc6749.grants import ClientCredentialsGrant
+from authlib.oauth2.rfc7591 import ClientRegistrationEndpoint
+from authlib.oauth2.rfc6749.models import ClientMixin, AuthorizationCodeMixin
+from authlib.integrations.flask_oauth2 import AuthorizationServer
+import requests
+import logging
+import os
+
+# Allow HTTP for testing
+os.environ['AUTHLIB_INSECURE_TRANSPORT'] = 'true'
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Simple in-memory storage
+clients_db = {}
+codes_db = {}
+tokens_db = {}
+
+class Client(ClientMixin):
+    def __init__(self, client_id, client_secret, **kwargs):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uris = kwargs.get('redirect_uris', [])
+        self.grant_types = kwargs.get('grant_types', ['authorization_code'])
+        self.response_types = kwargs.get('response_types', ['code'])
+        self.scope = kwargs.get('scope', '')
+        self.client_name = kwargs.get('client_name', '')
+
+    def get_client_id(self):
+        return self.client_id
+
+    def get_default_redirect_uri(self):
+        return self.redirect_uris[0] if self.redirect_uris else None
+
+    def get_allowed_scope(self, scope):
+        return scope
+
+    def check_redirect_uri(self, redirect_uri):
+        return redirect_uri in self.redirect_uris
+
+    def has_client_secret(self):
+        return bool(self.client_secret)
+
+    def check_client_secret(self, client_secret):
+        result = self.client_secret == client_secret
+        logger.info(f"CLIENT_SECRET_CHECK: Expected: {self.client_secret[:8]}..., Got: {client_secret[:8]}..., Match: {result}")
+        return result
+
+    def check_token_endpoint_auth_method(self, method):
+        result = method in ['client_secret_basic', 'client_secret_post', 'none']
+        logger.info(f"AUTH_METHOD_CHECK: Method: {method}, Valid: {result}")
+        return result
+
+    def check_response_type(self, response_type):
+        result = response_type in self.response_types
+        logger.info(f"RESPONSE_TYPE_CHECK: Type: {response_type}, Valid: {result}")
+        return result
+
+    def check_grant_type(self, grant_type):
+        result = grant_type in self.grant_types
+        logger.info(f"GRANT_TYPE_CHECK: Type: {grant_type}, Allowed: {self.grant_types}, Valid: {result}")
+        return result
+
+    def check_endpoint_auth_method(self, method, endpoint):
+        result = method in ['client_secret_basic', 'client_secret_post', 'none']
+        logger.info(f"ENDPOINT_AUTH_METHOD_CHECK: Method: {method}, Endpoint: {endpoint}, Valid: {result}")
+        return result
+
+class AuthorizationCode(AuthorizationCodeMixin):
+    def __init__(self, code, client_id, redirect_uri, scope, user_id, **kwargs):
+        self.code = code
+        self.client_id = client_id
+        self.redirect_uri = redirect_uri
+        self.scope = scope
+        self.user_id = user_id
+        self.code_challenge = kwargs.get('code_challenge')
+        self.code_challenge_method = kwargs.get('code_challenge_method')
+        self.auth_time = time.time()
+
+    def is_expired(self):
+        return time.time() - self.auth_time > 600  # 10 minutes
+
+    def get_redirect_uri(self):
+        return self.redirect_uri
+
+    def get_scope(self):
+        return self.scope
+
+class MyClientRegistrationEndpoint(ClientRegistrationEndpoint):
+    def authenticate_token(self, request):
+        return True
+
+    def save_client(self, client_info, client_metadata, request):
+        client_id = client_info['client_id']
+        client_secret = client_info.get('client_secret')
+
+        client = Client(
+            client_id=client_id,
+            client_secret=client_secret,
+            **client_metadata
+        )
+        clients_db[client_id] = client
+        return client
+
+    def get_server_metadata(self):
+        return {
+            "grant_types_supported": ["authorization_code", "client_credentials"],
+            "response_types_supported": ["code"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"]
+        }
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = secrets.token_hex(32)
+app.config['AUTHLIB_INSECURE_TRANSPORT'] = True  # Allow HTTP for testing
+
+# OAuth2 server setup
+authorization = AuthorizationServer()
+
+def query_client(client_id):
+    logger.error(f"🔥 QUERY_CLIENT CALLED BY OAUTH LIBRARY: client_id={client_id}")
+    logger.error(f"🔥 QUERY_CLIENT: Available clients: {list(clients_db.keys())}")
+    result = clients_db.get(client_id)
+    logger.error(f"🔥 QUERY_CLIENT RESULT: {result}")
+    return result
+
+def save_authorization_code(code, request):
+    codes_db[code] = AuthorizationCode(
+        code=code,
+        client_id=request.client.client_id,
+        redirect_uri=request.redirect_uri,
+        scope=request.scope,
+        user_id='default_user',
+        code_challenge=getattr(request, 'code_challenge', None),
+        code_challenge_method=getattr(request, 'code_challenge_method', None)
+    )
+
+def query_authorization_code(code, client):
+    auth_code = codes_db.get(code)
+    if auth_code and auth_code.client_id == client.client_id:
+        return auth_code
+    return None
+
+def delete_authorization_code(authorization_code):
+    if authorization_code.code in codes_db:
+        del codes_db[authorization_code.code]
+
+def save_token(token, request):
+    token_key = token['access_token']
+    client = request.client
+    tokens_db[token_key] = {
+        'client_id': client.client_id,
+        'client_name': client.client_name,
+        'user_id': getattr(request, 'user_id', 'default_user'),
+        'scope': token.get('scope', ''),
+        'expires_at': time.time() + token.get('expires_in', 3600),
+        'issued_at': time.time()
+    }
+    logger.info(f"TOKEN ISSUED: {client.client_name} | Client ID: {client.client_id[:8]}... | Token: {token_key[:8]}...")
+
+logger.info(f"OAUTH_INIT: Initializing authorization server with query_client function")
+authorization.init_app(app, query_client=query_client, save_token=save_token)
+logger.info(f"OAUTH_INIT: Authorization server initialized")
+
+# Register authorization code grant
+class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
+    def save_authorization_code(self, code, request):
+        save_authorization_code(code, request)
+
+    def query_authorization_code(self, code, client):
+        return query_authorization_code(code, client)
+
+    def delete_authorization_code(self, authorization_code):
+        delete_authorization_code(authorization_code)
+
+    def authenticate_user(self, authorization_code):
+        return {'id': authorization_code.user_id}
+
+authorization.register_grant(AuthorizationCodeGrant)
+authorization.register_grant(ClientCredentialsGrant)
+
+# Register client registration endpoint
+client_registration = MyClientRegistrationEndpoint()
+authorization.register_endpoint(client_registration)
+
+# Target MCP server
+MCP_SERVER_URL = "http://127.0.0.1:9201/mcp"
+
+def verify_token(token):
+    """Verify the access token"""
+    if not token:
+        return False
+
+    token_info = tokens_db.get(token)
+    if not token_info:
+        return False
+
+    if time.time() > token_info['expires_at']:
+        del tokens_db[token]
+        return False
+
+    return True
+
+def get_session_from_token(token):
+    """Generate a stable session ID from token"""
+    token_info = tokens_db.get(token)
+    if token_info:
+        # Create stable session ID from client and token
+        session_data = f"{token_info['client_id']}:{token[:16]}"
+        return f"sess_{hashlib.sha256(session_data.encode()).hexdigest()[:16]}"
+    return None
+
+# OAuth discovery endpoints
+@app.route('/.well-known/oauth-authorization-server')
+def oauth_authorization_server():
+    return jsonify({
+        "issuer": request.host_url.rstrip('/'),
+        "authorization_endpoint": request.host_url.rstrip('/') + "/oauth/authorize",
+        "token_endpoint": request.host_url.rstrip('/') + "/token",
+        "registration_endpoint": request.host_url.rstrip('/') + "/register",
+        "grant_types_supported": ["authorization_code", "client_credentials"],
+        "response_types_supported": ["code"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"]
+    })
+
+@app.route('/.well-known/oauth-protected-resource')
+def oauth_protected_resource():
+    return jsonify({
+        "resource": request.host_url.rstrip('/'),
+        "authorization_servers": [request.host_url.rstrip('/')]
+    })
+
+# OAuth endpoints
+@app.route('/oauth/authorize', methods=['GET', 'POST'])
+def authorize():
+    logger.info(f"AUTHORIZATION REQUEST: Method: {request.method} | Args: {dict(request.args)}")
+
+    if request.method == 'GET':
+        try:
+            client_id = request.args.get('client_id')
+            if client_id:
+                client = clients_db.get(client_id)
+                client_name = client.client_name if client else 'Unknown'
+                logger.info(f"AUTHORIZATION FOR: {client_name} | Client ID: {client_id[:8]}...")
+
+            grant = authorization.get_consent_grant(end_user='default_user')
+            response = authorization.create_authorization_response(grant=grant, grant_user='default_user')
+            return response
+        except OAuth2Error as error:
+            logger.error(f"AUTHORIZATION ERROR: {error}")
+            return jsonify(error.get_body()), error.status_code
+    return jsonify({"error": "invalid_request"}), 400
+
+@app.route('/oauth/token', methods=['POST'])
+def issue_token_oauth():
+    logger.info(f"OAUTH TOKEN REQUEST: Form: {dict(request.form)} | Headers: {dict(request.headers)}")
+    try:
+        response = authorization.create_token_response()
+        logger.info(f"OAUTH TOKEN RESPONSE: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"OAUTH TOKEN ERROR: {e}")
+        import traceback
+        logger.error(f"OAUTH TOKEN TRACEBACK: {traceback.format_exc()}")
+        return jsonify({"error": "server_error"}), 500
+
+@app.route('/token', methods=['POST'])
+def issue_token():
+    logger.info(f"TOKEN REQUEST: Form: {dict(request.form)} | Headers: {dict(request.headers)}")
+
+    # Debug clients_db state
+    logger.info(f"CLIENTS_DB_STATE: {len(clients_db)} clients registered")
+    for client_id, client in clients_db.items():
+        logger.info(f"CLIENTS_DB_CLIENT: {client_id} -> {client.client_name}")
+
+    # Debug the OAuth request object
+    try:
+        oauth_request = authorization.create_oauth2_request(request)
+        logger.info(f"OAUTH_REQUEST: client_id={oauth_request.client_id}, grant_type={oauth_request.grant_type}")
+
+        # Test query_client function directly
+        logger.info(f"DIRECT_QUERY_TEST: Calling query_client directly with client_id={oauth_request.client_id}")
+        direct_result = query_client(oauth_request.client_id)
+        logger.info(f"DIRECT_QUERY_RESULT: {direct_result}")
+
+    except Exception as e:
+        logger.error(f"OAUTH_REQUEST_ERROR: {e}")
+
+    try:
+        response = authorization.create_token_response()
+        logger.info(f"TOKEN RESPONSE: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"TOKEN ERROR: {e}")
+        import traceback
+        logger.error(f"TOKEN TRACEBACK: {traceback.format_exc()}")
+        return jsonify({"error": "server_error"}), 500
+
+@app.route('/register', methods=['POST'])
+def register_client():
+    try:
+        data = request.get_json() or {}
+
+        client_id = secrets.token_urlsafe(32)
+        client_secret = secrets.token_hex(24)
+
+        redirect_uris = data.get('redirect_uris', ['https://claude.ai/api/mcp/auth_callback'])
+        grant_types = data.get('grant_types', ['authorization_code', 'client_credentials'])
+        response_types = data.get('response_types', ['code'])
+        client_name = data.get('client_name', 'MCP Multiplayer Client')
+
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        logger.info(f"CLIENT REGISTRATION: {client_name} | User-Agent: {user_agent} | Client ID: {client_id[:8]}...")
+
+        client = Client(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uris=redirect_uris,
+            grant_types=grant_types,
+            response_types=response_types,
+            scope=data.get('scope', ''),
+            client_name=client_name
+        )
+        clients_db[client_id] = client
+
+        response = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "client_id_issued_at": int(time.time()),
+            "client_secret_expires_at": 0,
+            "redirect_uris": redirect_uris,
+            "grant_types": grant_types,
+            "response_types": response_types,
+            "token_endpoint_auth_method": "client_secret_basic"
+        }
+
+        if data.get('client_name'):
+            response['client_name'] = data['client_name']
+        if data.get('scope'):
+            response['scope'] = data['scope']
+
+        return jsonify(response), 201
+
+    except Exception as e:
+        logger.error(f"Client registration error: {e}")
+        return jsonify({"error": "server_error", "error_description": str(e)}), 500
+
+def get_client_info_from_token(token):
+    """Get client information from token"""
+    token_info = tokens_db.get(token)
+    if token_info:
+        return {
+            'client_name': token_info.get('client_name', 'Unknown'),
+            'client_id': token_info.get('client_id', 'Unknown')[:8] + '...',
+            'user_id': token_info.get('user_id', 'Unknown')
+        }
+    return None
+
+@app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+@app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+def proxy_to_mcp(path):
+    # Skip auth for OAuth endpoints
+    if (path.startswith('.well-known/') or
+        path.startswith('oauth/') or
+        path == 'register' or
+        path == 'token'):
+        return jsonify({"error": "not_found"}), 404
+
+    # Check authentication
+    auth_header = request.headers.get('Authorization', '')
+    client_info = None
+    session_id = None
+
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        if verify_token(token):
+            client_info = get_client_info_from_token(token)
+            session_id = get_session_from_token(token)
+            logger.info(f"AUTHENTICATED MCP REQUEST: {client_info['client_name']} | Method: {request.method} | Path: /{path}")
+        else:
+            logger.warning(f"INVALID TOKEN: {request.remote_addr} | Path: /{path} | Token: {token[:8]}...")
+            return jsonify({"error": "invalid_token"}), 401
+    else:
+        # For testing, allow unauthenticated requests but log them
+        logger.info(f"UNAUTHENTICATED MCP REQUEST: {request.remote_addr} | Method: {request.method} | Path: /{path}")
+        # Generate a test session for unauthenticated requests
+        session_id = f"sess_unauth_{request.remote_addr.replace('.', '_')}"
+
+    try:
+        url = f"{MCP_SERVER_URL}/{path}" if path else MCP_SERVER_URL
+
+        # Build headers for the proxied request
+        headers = {k: v for k, v in request.headers if k.lower() not in ['host', 'authorization']}
+        if session_id:
+            headers['X-Session-ID'] = session_id
+
+        # Make the request to MCP server
+        resp = requests.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            json=request.get_json() if request.is_json else None,
+            data=request.get_data() if not request.is_json else None,
+            params=request.args,
+            cookies=request.cookies,
+            allow_redirects=False
+        )
+
+        # Build response
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        response_headers = [(name, value) for (name, value) in resp.headers.items()
+                          if name.lower() not in excluded_headers]
+
+        response = Response(resp.content, resp.status_code, response_headers)
+        return response
+
+    except Exception as e:
+        logger.error(f"PROXY ERROR: {client_info['client_name'] if client_info else 'Unknown'} | Error: {str(e)}")
+        return jsonify({"error": "server_error", "error_description": str(e)}), 500
+
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    host = os.getenv("PROXY_HOST", "127.0.0.1")
+    port = int(os.getenv("PROXY_PORT", "9200"))
+    domain = os.getenv("DOMAIN", "localhost")
+    use_ssl = os.getenv("USE_SSL", "false").lower() == "true"
+
+    ssl_cert = os.getenv("SSL_CERT_PATH", f"./certs/live/{domain}/fullchain.pem")
+    ssl_key = os.getenv("SSL_KEY_PATH", f"./certs/live/{domain}/privkey.pem")
+
+    if use_ssl and os.path.exists(ssl_cert) and os.path.exists(ssl_key):
+        logger.info(f"Starting OAuth+SSL proxy on {host}:{port} with HTTPS for domain {domain}")
+        app.run(host=host, port=port, debug=False, ssl_context=(ssl_cert, ssl_key))
+    else:
+        logger.info(f"Starting OAuth proxy on {host}:{port} without HTTPS")
+        app.run(host=host, port=port, debug=False)

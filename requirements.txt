@@ -1,0 +1,5 @@
+fastmcp
+authlib
+requests
+flask
+python-dotenv
