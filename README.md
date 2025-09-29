@@ -124,6 +124,9 @@ class EchoBot:
 - `on_join(player_id)` - Called when player joins
 - `on_message(msg)` - Called on new messages
 - `self.ctx.post(kind, body)` - Post messages to channel
+- `self.ctx.get_state()` / `self.ctx.set_state(state)` - Persist state between messages
+
+**Important**: Bots are instantiated fresh for each message. Use `ctx.get_state()` in `__init__` and `ctx.set_state()` after changes to persist state.
 
 **Test**: `python scripts/test_inline_bot.py`
 

@@ -67,7 +67,8 @@ def create_channel(
             - on_join(player_id): Called when player joins
             - on_message(msg): Called on new messages
             - self.ctx.post(kind, body): Post messages to channel
-        bot_preset: Optional preset bot name like "GuessBot" (ignored if bot_code provided)
+            - self.ctx.get_state() / set_state(dict): Persist state (bots recreated each message)
+        bot_preset: Optional preset bot name like "GuessBot" or "BlackjackBot" (ignored if bot_code provided)
 
     Example with preset:
         create_channel(
@@ -126,6 +127,17 @@ def create_channel(
                         "emits": ["prompt", "state", "turn", "judge"],
                         "params": {"mode": "number", "range": [1, 100]}
                     }
+                },
+                "BlackjackBot": {
+                    "name": "BlackjackBot",
+                    "version": "1.0",
+                    "code_ref": "builtin://BlackjackBot",
+                    "manifest": {
+                        "summary": "Blackjack dealer and referee",
+                        "hooks": ["on_init", "on_join", "on_message"],
+                        "emits": ["bot"],
+                        "params": {}
+                    }
                 }
             }
             if bot_preset in presets:
@@ -174,7 +186,9 @@ def join_channel(invite_code: str) -> Dict[str, Any]:
         invite_code: The invite code (e.g., "inv_...") or rejoin token (e.g., "rejoin_...")
 
     Returns:
-        Join result with channel_id, slot_id, rejoin_token (save this!), and view.
+        Join result with channel_id, slot_id, rejoin_token (save this!), view, and bots array.
+        The bots array contains bot_id, name, manifest for each bot.
+        Use bot_id with get_bot_code(channel_id, bot_id) to retrieve and verify bot code.
         The rejoin_token can be used to rejoin if you disconnect or refresh.
     """
     try:
@@ -189,6 +203,10 @@ def join_channel(invite_code: str) -> Dict[str, Any]:
 
         # Notify bots of the join
         bot_manager.dispatch_join(result["channel_id"], session_id)
+
+        # Add bots info for easy access to bot_id
+        bots = bot_manager.get_channel_bots(result["channel_id"])
+        result["bots"] = bots
 
         return result
 
@@ -299,11 +317,12 @@ def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int
 
     Args:
         channel_id: The channel ID
-        cursor: Optional last seen message ID (integer). Omit or pass null to get all messages from the beginning.
+        cursor: Optional last seen message ID (integer). Omit entirely or pass None on first call.
+                Then use the returned cursor value for subsequent calls. Must be int or None.
         timeout_ms: Long-poll timeout in milliseconds
 
     Returns:
-        Messages and sync info
+        Dict with 'messages' array, 'cursor' (int to use in next call), and optional 'view'
     """
     try:
         if not channel_id:
