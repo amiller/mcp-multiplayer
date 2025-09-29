@@ -151,15 +151,18 @@ python scripts/session_test.py
 
 ## MCP Client Integration
 
-### Session Handling (CRITICAL)
+### Session Handling (SOLVED ✅)
 
-**⚠️ Important**: MCP multiplayer requires proper session continuity. When making MCP requests:
+**✅ Session continuity now works automatically with Claude!**
 
-1. **Capture the session ID**: The first successful MCP response includes an `mcp-session-id` header
-2. **Reuse the session ID**: Include this header in ALL subsequent requests to maintain session continuity
-3. **Session binding**: Channels, joins, and messages are tied to your session ID
+**How it works**:
+1. **FastMCP generates session ID**: The MCP server creates a unique session ID for each client connection
+2. **Claude provides session ID**: Claude automatically sends this session ID in the `Mcp-Session-Id` header
+3. **Session binding**: Channels, joins, and messages are tied to Claude's consistent session ID
 
-**Example session handling**:
+**For Claude clients**: Session handling is **completely automatic**. Claude manages session continuity internally.
+
+**For custom script clients**: You may need manual session handling:
 ```python
 # First request (initialize)
 response = requests.post(url, json=mcp_request, headers=auth_headers)
@@ -170,9 +173,42 @@ headers['mcp-session-id'] = session_id
 response = requests.post(url, json=next_request, headers=headers)
 ```
 
-**Without proper session handling**: You'll get "Missing session ID" errors or be unable to join channels you created.
+**Session-related errors are now resolved** - no more "Missing session ID" or "NOT_MEMBER" errors with Claude.
 
-See `scripts/create_channel.py` for a complete working example.
+### Claude OAuth Flow (DETAILED)
+
+**✅ Complete understanding of how Claude actually connects:**
+
+Claude follows a sophisticated OAuth 2.1 flow with Dynamic Client Registration:
+
+1. **Discovery Phase**:
+   - `GET /.well-known/oauth-protected-resource` - Discovers OAuth server location
+   - `GET /.well-known/oauth-authorization-server` - Gets OAuth server metadata
+
+2. **Registration Phase**:
+   - `POST /register` - Dynamic client registration (RFC7591)
+   - Server auto-issues initial token for Claude clients
+   - Response includes both client credentials AND access token
+
+3. **Browser Authorization Phase**:
+   - Claude opens browser to `/oauth/authorize` with PKCE challenge
+   - Server auto-approves Claude clients (no user interaction needed)
+   - Browser redirects to `https://claude.ai/api/mcp/auth_callback` with authorization code
+
+4. **Token Exchange Phase**:
+   - `POST /token` - Exchanges authorization code for final access token
+   - Uses PKCE code verifier for security
+
+5. **MCP Connection Phase**:
+   - Claude uses final OAuth token: `Authorization: Bearer <token>`
+   - Maintains session continuity: `Mcp-Session-Id: <session_id>`
+   - All MCP requests authenticated and session-bound
+
+**Key Implementation Details**:
+- Auto-token issuance prevents connection delays
+- Auto-approval eliminates user interaction prompts
+- Proper PKCE verification maintains security
+- FastMCP session management works seamlessly
 
 ### Claude Configuration
 

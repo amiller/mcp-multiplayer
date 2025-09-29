@@ -115,6 +115,10 @@ class MyClientRegistrationEndpoint(ClientRegistrationEndpoint):
     def save_client(self, client_info, client_metadata, request):
         client_id = client_info['client_id']
         client_secret = client_info.get('client_secret')
+        logger.info(f"💾 SAVING CLIENT:")
+        logger.info(f"   Client ID: {client_id}")
+        logger.info(f"   Client Secret: {client_secret[:8] if client_secret else 'None'}...")
+        logger.info(f"   Metadata: {client_metadata}")
 
         client = Client(
             client_id=client_id,
@@ -122,6 +126,7 @@ class MyClientRegistrationEndpoint(ClientRegistrationEndpoint):
             **client_metadata
         )
         clients_db[client_id] = client
+        logger.info(f"✅ CLIENT STORED: {len(clients_db)} total clients")
         return client
 
     def get_server_metadata(self):
@@ -184,6 +189,18 @@ logger.info(f"OAUTH_INIT: Initializing authorization server with query_client fu
 authorization.init_app(app, query_client=query_client, save_token=save_token)
 logger.info(f"OAUTH_INIT: Authorization server initialized")
 
+# Add comprehensive debugging middleware
+@app.before_request
+def log_request():
+    logger.info(f"🌐 INCOMING REQUEST: {request.method} {request.path}")
+    logger.info(f"   Headers: {dict(request.headers)}")
+    if request.method in ['POST', 'PUT', 'PATCH']:
+        try:
+            body = request.get_json() or request.form or request.get_data()
+            logger.info(f"   Body: {body}")
+        except:
+            pass
+
 # Register authorization code grant
 class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
     def save_authorization_code(self, code, request):
@@ -223,18 +240,12 @@ def verify_token(token):
 
     return True
 
-def get_session_from_token(token):
-    """Generate a stable session ID from token"""
-    token_info = tokens_db.get(token)
-    if token_info:
-        # Create stable session ID from client and token
-        session_data = f"{token_info['client_id']}:{token[:16]}"
-        return f"sess_{hashlib.sha256(session_data.encode()).hexdigest()[:16]}"
-    return None
+# Removed get_session_from_token - session IDs are client-provided, not server-generated
 
 # OAuth discovery endpoints
 @app.route('/.well-known/oauth-authorization-server')
 def oauth_authorization_server():
+    logger.info("🔍 OAUTH DISCOVERY: Client requesting authorization server metadata")
     return jsonify({
         "issuer": request.host_url.rstrip('/'),
         "authorization_endpoint": request.host_url.rstrip('/') + "/oauth/authorize",
@@ -265,6 +276,13 @@ def authorize():
                 client = clients_db.get(client_id)
                 client_name = client.client_name if client else 'Unknown'
                 logger.info(f"AUTHORIZATION FOR: {client_name} | Client ID: {client_id[:8]}...")
+
+                # Auto-approve Claude clients - no user interaction needed
+                if client and client.client_name == 'Claude':
+                    logger.info(f"AUTO-APPROVING CLAUDE CLIENT: {client_id[:8]}...")
+                    grant = authorization.get_consent_grant(end_user='default_user')
+                    response = authorization.create_authorization_response(grant=grant, grant_user='default_user')
+                    return response
 
             grant = authorization.get_consent_grant(end_user='default_user')
             response = authorization.create_authorization_response(grant=grant, grant_user='default_user')
@@ -362,6 +380,28 @@ def register_client():
         if data.get('scope'):
             response['scope'] = data['scope']
 
+        # Auto-issue token for Claude clients
+        if client_name == 'Claude':
+            logger.info(f"AUTO-ISSUING TOKEN FOR CLAUDE CLIENT: {client_id[:8]}...")
+            access_token = secrets.token_urlsafe(32)
+            tokens_db[access_token] = {
+                'client_id': client_id,
+                'client_name': client_name,
+                'user_id': 'claude_user',
+                'scope': data.get('scope', ''),
+                'expires_at': time.time() + 3600,  # 1 hour
+                'issued_at': time.time()
+            }
+            logger.info(f"AUTO-ISSUED TOKEN: {client_name} | Token: {access_token[:8]}...")
+
+            # Add token info to registration response
+            response.update({
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "scope": data.get('scope', '')
+            })
+
         return jsonify(response), 201
 
     except Exception as e:
@@ -392,30 +432,33 @@ def proxy_to_mcp(path):
     # Check authentication
     auth_header = request.headers.get('Authorization', '')
     client_info = None
-    session_id = None
 
     if auth_header.startswith('Bearer '):
         token = auth_header[7:]
         if verify_token(token):
             client_info = get_client_info_from_token(token)
-            session_id = get_session_from_token(token)
             logger.info(f"AUTHENTICATED MCP REQUEST: {client_info['client_name']} | Method: {request.method} | Path: /{path}")
         else:
             logger.warning(f"INVALID TOKEN: {request.remote_addr} | Path: /{path} | Token: {token[:8]}...")
             return jsonify({"error": "invalid_token"}), 401
     else:
-        # For testing, allow unauthenticated requests but log them
-        logger.info(f"UNAUTHENTICATED MCP REQUEST: {request.remote_addr} | Method: {request.method} | Path: /{path}")
-        # Generate a test session for unauthenticated requests
-        session_id = f"sess_unauth_{request.remote_addr.replace('.', '_')}"
+        logger.info(f"NO AUTH TOKEN - rejecting request from {request.remote_addr}")
+        return jsonify({"error": "authentication_required", "description": "OAuth token required"}), 401
 
     try:
         url = f"{MCP_SERVER_URL}/{path}" if path else MCP_SERVER_URL
 
         # Build headers for the proxied request
         headers = {k: v for k, v in request.headers if k.lower() not in ['host', 'authorization']}
-        if session_id:
-            headers['X-Session-ID'] = session_id
+        # Pass through all client headers including Mcp-Session-Id
+
+        # DEBUG: Log the forwarded request details
+        logger.info(f"🔄 FORWARDING REQUEST:")
+        logger.info(f"   URL: {url}")
+        logger.info(f"   Method: {request.method}")
+        logger.info(f"   Headers: {dict(headers)}")
+        logger.info(f"   JSON: {request.get_json() if request.is_json else None}")
+        logger.info(f"   Data: {request.get_data() if not request.is_json else None}")
 
         # Make the request to MCP server
         resp = requests.request(
@@ -428,6 +471,9 @@ def proxy_to_mcp(path):
             cookies=request.cookies,
             allow_redirects=False
         )
+
+        # DEBUG: Log the response
+        logger.info(f"🔙 MCP RESPONSE: {resp.status_code} | Content: {resp.text[:200]}...")
 
         # Build response
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']

@@ -28,26 +28,20 @@ bot_manager = BotManager(channel_manager)
 # Create FastMCP instance
 mcp = FastMCP("Multiplayer Channels")
 
-# Simple session tracking for demo (in production, would use OAuth)
-session_store = {}
-
 def get_session_id():
-    """Get session ID from request context headers or generate one."""
+    """Get session ID from FastMCP context (client-provided)."""
     try:
-        # Try to get session ID from request context (set by OAuth proxy)
         ctx = request_ctx.get()
-        if hasattr(ctx, 'request') and ctx.request and hasattr(ctx.request, 'headers'):
-            session_id = ctx.request.headers.get('X-Session-ID')
+        if hasattr(ctx, 'request') and ctx.request:
+            # Use the session ID that Claude provides
+            session_id = ctx.request.headers.get('Mcp-Session-Id')
             if session_id:
                 return session_id
     except:
-        pass  # Fall back to generating session ID
+        pass
 
-    # Generate new session ID as fallback
-    import secrets
-    session_id = f"sess_{secrets.token_urlsafe(8)}"
-    session_store[session_id] = {"created_at": datetime.utcnow().isoformat()}
-    return session_id
+    # Fallback to None - let FastMCP handle session management
+    return None
 
 @mcp.tool()
 def health_check() -> str:
@@ -116,6 +110,8 @@ def join_channel(invite_code: str) -> Dict[str, Any]:
             raise ValueError("invite_code required")
 
         session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
 
         result = channel_manager.join_channel(invite_code, session_id)
 
@@ -154,6 +150,8 @@ def post_message(channel_id: str, kind: str = "user", body: Optional[str] = None
             body_dict = {"text": body}
 
         session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
 
         result = channel_manager.post_message(channel_id, session_id, kind, body_dict)
 
@@ -194,6 +192,8 @@ def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int
             raise ValueError("channel_id required")
 
         session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
 
         result = channel_manager.sync_messages(
             channel_id, session_id, cursor, timeout_ms
@@ -223,6 +223,8 @@ def get_channel_info(channel_id: str) -> Dict[str, Any]:
             raise ValueError("channel_id required")
 
         session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
 
         # Check membership
         if not channel_manager._is_member(channel_id, session_id):

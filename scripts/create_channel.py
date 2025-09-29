@@ -77,8 +77,19 @@ def main():
         "params": {
             "name": "create_channel",
             "arguments": {
-                "name": "Test Channel",
-                "slots": ["invite:player1", "invite:player2"]
+                "name": "Guessing Game",
+                "slots": ["bot:guess-referee", "invite:player1", "invite:player2"],
+                "bots": [{
+                    "name": "GuessBot",
+                    "version": "1.0",
+                    "code_ref": "builtin://GuessBot",
+                    "manifest": {
+                        "summary": "Turn-based number guessing referee",
+                        "hooks": ["on_init", "on_join", "on_message"],
+                        "emits": ["prompt", "state", "turn", "judge"],
+                        "params": {"mode": "number", "range": [1, 100]}
+                    }
+                }]
             }
         },
         "jsonrpc": "2.0",
