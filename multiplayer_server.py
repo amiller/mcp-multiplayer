@@ -56,7 +56,17 @@ def create_channel(name: str, slots: List[str], bots: Optional[List[Dict[str, An
     Args:
         name: Channel name
         slots: List of slot types like ["bot:guess-referee", "invite:player1", "invite:player2"]
-        bots: Optional list of bot definitions to attach
+        bots: Optional list of bot definitions. Each bot dict has:
+            - name: Bot name
+            - version: Bot version (default "1.0")
+            - code_ref: Reference like "builtin://GuessBot" OR
+            - inline_code: Python code defining bot class with:
+                * __init__(self, ctx, params): Initialize
+                * on_init(): Called when bot attaches
+                * on_join(player_id): Called when player joins
+                * on_message(msg): Called on new messages
+                * self.ctx.post(kind, body): Post messages
+            - manifest: Dict with summary, hooks ["on_init", "on_join", "on_message"], emits, params
 
     Returns:
         Channel creation result with channel_id and invite codes
