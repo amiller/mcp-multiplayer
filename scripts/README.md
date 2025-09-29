@@ -1,48 +1,79 @@
-# Scripts Directory
+# MCP Scripts
 
-Scripts for interacting with running MCP multiplayer instances.
+These scripts provide a simple interface for interacting with MCP multiplayer channels. They automatically handle OAuth authentication and MCP session management.
 
-## Scripts
+## Configuration
 
-- **`create_channel.py`** - Channel creation script that follows Claude's exact MCP pattern
-  - Uses proper MCP session initialization flow
-  - Connects to https://mcp.ln.soc1024.com
-  - Successfully creates channels with invite codes
+Edit `.env.scripts` to switch between local Docker development and remote production endpoints:
 
-- **`list_channels.py`** - Lists channels and their status
-  - Demonstrates channel discovery and inspection
-
-- **`browser_test.py`** - Browser-compatible channel testing
-  - Tests channel operations from browser perspective
-
-- **`session_test.py`** - Session continuity testing
-  - Tests MCP session handling through OAuth proxy
-  - Demonstrates session continuity issues and fixes
-
-## Usage
-
-All scripts connect to the production domain at https://mcp.ln.soc1024.com (which routes to localhost:9100 with SSL).
-
-Ensure both servers are running:
+**For remote production (mcp.ln.soc1024.com):**
 ```bash
-# Terminal 1: MCP Server
-python multiplayer_server.py
+# Remote endpoint (production)
+MCP_BASE_URL=https://mcp.ln.soc1024.com
 
-# Terminal 2: OAuth Proxy
-PROXY_PORT=9100 USE_SSL=true DOMAIN=mcp.ln.soc1024.com python oauth_proxy.py
+# Local endpoint (Docker development)
+# MCP_BASE_URL=https://127.0.0.1:9100
 ```
 
-Then run any script:
+**For local Docker development:**
 ```bash
+# Remote endpoint (production)
+# MCP_BASE_URL=https://mcp.ln.soc1024.com
+
+# Local endpoint (Docker development)
+MCP_BASE_URL=https://127.0.0.1:9100
+```
+
+## Available Scripts
+
+All scripts automatically use the configured endpoint and handle OAuth + MCP session management:
+
+- **`list_channels.py`** - List all available channels with details
+- **`create_channel.py`** - Create a new guessing game channel with bot
+- **`join_channel.py <invite_code>`** - Join a channel using invite code
+- **`session_test.py`** - Test full session continuity (create→join→message→sync)
+
+## Usage Examples
+
+```bash
+# List channels on current endpoint
+python scripts/list_channels.py
+
+# Create a new channel
 python scripts/create_channel.py
+
+# Join a channel (use invite code from create_channel output)
+python scripts/join_channel.py inv_abc123...
+
+# Test session continuity
+python scripts/session_test.py
 ```
 
-## Key Pattern (from create_channel.py)
+## Architecture
 
-The working pattern bypasses OAuth complexity and follows Claude's exact MCP flow:
+- **`config.py`** - Environment configuration from `.env.scripts`
+- **`mcp_client.py`** - Shared MCP client with OAuth and session handling
 
-1. **Initialize MCP session**
-2. **Send initialized notification**
-3. **Call tools with proper session headers**
+The client automatically handles:
+- ✅ OAuth authentication (client registration → token generation)
+- ✅ MCP session handshake (`initialize` → `notifications/initialized`)
+- ✅ JSON-RPC formatting with required `params: {}` fields
+- ✅ SSE response parsing for `data: ` prefixed event streams
+- ✅ Error handling and connection management
 
-This pattern successfully creates channels that Claude can join.
+## Requirements
+
+Make sure you have the required dependencies:
+```bash
+pip install python-dotenv requests urllib3
+```
+
+## Testing Both Endpoints
+
+The scripts work identically with both local Docker and remote production:
+
+1. **Test remote** (comment out local URL in `.env.scripts`)
+2. **Test local Docker** (uncomment local URL in `.env.scripts`)
+3. Both endpoints share the same data and OAuth flows
+
+This allows confident local development with the same client integration patterns that work in production.
