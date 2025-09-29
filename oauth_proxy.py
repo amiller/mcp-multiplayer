@@ -321,12 +321,28 @@ def authorize():
             client_id = request.args.get('client_id')
             if client_id:
                 client = clients_db.get(client_id)
+
+                # Auto-register OpenAI client if not found
+                if not client and request.args.get('redirect_uri', '').startswith('https://chatgpt.com'):
+                    logger.info(f"AUTO-REGISTERING OPENAI CLIENT: {client_id[:8]}...")
+                    # Don't set a secret - OpenAI will provide it during token exchange
+                    client = Client(
+                        client_id=client_id,
+                        client_secret='',  # Will be set during token exchange
+                        redirect_uris=[request.args.get('redirect_uri')],
+                        grant_types=['authorization_code'],
+                        response_types=['code'],
+                        client_name='OpenAI'
+                    )
+                    clients_db[client_id] = client
+                    logger.info(f"OPENAI CLIENT REGISTERED: {client_id[:8]}...")
+
                 client_name = client.client_name if client else 'Unknown'
                 logger.info(f"AUTHORIZATION FOR: {client_name} | Client ID: {client_id[:8]}...")
 
-                # Auto-approve Claude clients - no user interaction needed
-                if client and client.client_name == 'Claude':
-                    logger.info(f"AUTO-APPROVING CLAUDE CLIENT: {client_id[:8]}...")
+                # Auto-approve Claude and OpenAI clients - no user interaction needed
+                if client and client.client_name in ['Claude', 'OpenAI']:
+                    logger.info(f"AUTO-APPROVING {client.client_name.upper()} CLIENT: {client_id[:8]}...")
                     grant = authorization.get_consent_grant(end_user='default_user')
                     response = authorization.create_authorization_response(grant=grant, grant_user='default_user')
                     return response
@@ -361,18 +377,22 @@ def issue_token():
     for client_id, client in clients_db.items():
         logger.info(f"CLIENTS_DB_CLIENT: {client_id} -> {client.client_name}")
 
-    # Debug the OAuth request object
-    try:
-        oauth_request = authorization.create_oauth2_request(request)
-        logger.info(f"OAUTH_REQUEST: client_id={oauth_request.client_id}, grant_type={oauth_request.grant_type}")
+    # Extract client credentials from Basic auth for OpenAI
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Basic '):
+        import base64
+        try:
+            decoded = base64.b64decode(auth_header[6:]).decode('utf-8')
+            client_id_from_auth, client_secret_from_auth = decoded.split(':', 1)
 
-        # Test query_client function directly
-        logger.info(f"DIRECT_QUERY_TEST: Calling query_client directly with client_id={oauth_request.client_id}")
-        direct_result = query_client(oauth_request.client_id)
-        logger.info(f"DIRECT_QUERY_RESULT: {direct_result}")
-
-    except Exception as e:
-        logger.error(f"OAUTH_REQUEST_ERROR: {e}")
+            # Update OpenAI client secret if it's empty
+            client = clients_db.get(client_id_from_auth)
+            if client and client.client_name == 'OpenAI' and not client.client_secret:
+                logger.info(f"UPDATING OPENAI CLIENT SECRET: {client_id_from_auth[:8]}...")
+                client.client_secret = client_secret_from_auth
+                logger.info(f"OPENAI SECRET UPDATED: {client_secret_from_auth[:8]}...")
+        except Exception as e:
+            logger.error(f"FAILED TO PARSE BASIC AUTH: {e}")
 
     try:
         response = authorization.create_token_response()

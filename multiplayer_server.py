@@ -43,7 +43,7 @@ def get_session_id():
     # Fallback to None - let FastMCP handle session management
     return None
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def health_check() -> str:
     """Check if the multiplayer server is healthy."""
     return f"Multiplayer server healthy at {datetime.utcnow().isoformat()}"
@@ -292,7 +292,7 @@ def make_game_move(channel_id: str, game: str, action: str, value: int) -> Dict[
         logger.error(f"Error making game move: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to make game move")
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int = 25000) -> Dict[str, Any]:
     """
     Get messages from a channel since cursor.
@@ -325,7 +325,7 @@ def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int
         logger.error(f"Error syncing messages: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to sync messages")
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_channel_info(channel_id: str) -> Dict[str, Any]:
     """
     Get current channel information and member list.
@@ -363,7 +363,7 @@ def get_channel_info(channel_id: str) -> Dict[str, Any]:
         logger.error(f"Error getting channel info: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to get channel info")
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def get_bot_code(channel_id: str, bot_id: str) -> Dict[str, Any]:
     """
     Retrieve bot code and manifest for verification and common knowledge.
@@ -417,7 +417,7 @@ def get_bot_code(channel_id: str, bot_id: str) -> Dict[str, Any]:
         logger.error(f"Error getting bot code: {e}", exc_info=True)
         raise ValueError(f"INTERNAL_ERROR: Failed to get bot code: {e}")
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True})
 def list_channels() -> Dict[str, Any]:
     """
     List all available channels (debug endpoint).
