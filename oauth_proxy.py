@@ -33,10 +33,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Simple in-memory storage
+from pathlib import Path
+import os
+
+# Simple in-memory storage with persistence
+DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
+DATA_DIR.mkdir(exist_ok=True)
+TOKENS_FILE = DATA_DIR / "tokens.json"
+
 clients_db = {}
 codes_db = {}
 tokens_db = {}
+
+def load_tokens():
+    if TOKENS_FILE.exists():
+        try:
+            tokens_db.update(json.loads(TOKENS_FILE.read_text()))
+        except:
+            pass
+
+def save_tokens():
+    TOKENS_FILE.write_text(json.dumps(tokens_db, indent=2))
+
+load_tokens()
 
 class Client(ClientMixin):
     def __init__(self, client_id, client_secret, **kwargs):
@@ -183,6 +202,7 @@ def save_token(token, request):
         'expires_at': time.time() + token.get('expires_in', 3600),
         'issued_at': time.time()
     }
+    save_tokens()
     logger.info(f"TOKEN ISSUED: {client.client_name} | Client ID: {client.client_id[:8]}... | Token: {token_key[:8]}...")
 
 logger.info(f"OAUTH_INIT: Initializing authorization server with query_client function")
@@ -393,6 +413,7 @@ def register_client():
                 'expires_at': time.time() + 3600,  # 1 hour
                 'issued_at': time.time()
             }
+            save_tokens()
             logger.info(f"AUTO-ISSUED TOKEN: {client_name} | Token: {access_token[:8]}...")
 
             # Add token info to registration response

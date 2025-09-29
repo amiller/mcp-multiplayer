@@ -2,12 +2,15 @@ services:
   mcp-multiplayer:
     build: .
     ports:
-      - "8100:8100"
-      - "8201:8201"
+      - "${PROXY_PORT:-8100}:${PROXY_PORT:-8100}"
+      - "${MCP_PORT:-8201}:${MCP_PORT:-8201}"
+    volumes:
+      - ./data:/app/data
     environment:
       - DOMAIN=${DOMAIN:-localhost}
-      - USE_SSL=false
-      - PROXY_HOST=0.0.0.0
-      - PROXY_PORT=8100
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=8201
+      - USE_SSL=${USE_SSL:-false}
+      - PROXY_HOST=${PROXY_HOST:-0.0.0.0}
+      - PROXY_PORT=${PROXY_PORT:-8100}
+      - MCP_HOST=${MCP_HOST:-0.0.0.0}
+      - MCP_PORT=${MCP_PORT:-8201}
+      - DATA_DIR=/app/data
