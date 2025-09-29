@@ -1,0 +1,21 @@
+# Dstack deployment compose file
+# Build and push image first:
+#   docker build -t mcp-multiplayer .
+#   docker tag mcp-multiplayer YOUR_REGISTRY/mcp-multiplayer
+#   docker push YOUR_REGISTRY/mcp-multiplayer
+#   docker images --digests YOUR_REGISTRY/mcp-multiplayer
+# Then update the image hash below
+
+services:
+  mcp-multiplayer:
+    image: YOUR_REGISTRY/mcp-multiplayer@sha256:REPLACE_WITH_ACTUAL_HASH
+    ports:
+      - "8100:8100"
+    environment:
+      - PROXY_HOST=0.0.0.0
+      - PROXY_PORT=8100
+      - MCP_HOST=127.0.0.1
+      - MCP_PORT=8201
+      - USE_SSL=false
+      - DOMAIN=localhost
+    restart: unless-stopped

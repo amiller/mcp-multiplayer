@@ -1,60 +1,56 @@
 #!/usr/bin/env python3
 """
-Start both MCP server and OAuth proxy for testing
+Start both MCP server and OAuth proxy
 """
 
-import os
 import subprocess
-import time
 import sys
-from multiprocessing import Process
+import time
+import signal
+import os
 
-def start_mcp_server():
-    """Start the MCP server"""
-    print("Starting MCP server on port 9201...")
-    os.system("python multiplayer_server.py")
+def signal_handler(sig, frame):
+    print("\nShutting down services...")
+    sys.exit(0)
 
-def start_oauth_proxy():
-    """Start the OAuth proxy"""
-    print("Starting OAuth proxy on port 9200...")
-    os.system("python oauth_proxy.py")
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 def main():
-    """Start both servers"""
     print("Starting MCP Multiplayer services...")
 
+    mcp_host = os.getenv("MCP_HOST", "127.0.0.1")
+    mcp_port = os.getenv("MCP_PORT", "8201")
+    proxy_host = os.getenv("PROXY_HOST", "127.0.0.1")
+    proxy_port = os.getenv("PROXY_PORT", "8100")
+
     # Start MCP server in background
-    mcp_process = Process(target=start_mcp_server)
-    mcp_process.start()
+    mcp_process = subprocess.Popen([
+        sys.executable, "multiplayer_server.py"
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     # Give MCP server time to start
     time.sleep(2)
 
-    # Start OAuth proxy in background
-    proxy_process = Process(target=start_oauth_proxy)
-    proxy_process.start()
-
     print("\n" + "="*50)
     print("MCP Multiplayer is running!")
     print("="*50)
-    print("MCP Server:    http://127.0.0.1:9201")
-    print("OAuth Proxy:   http://127.0.0.1:9200")
-    print("Health Check:  http://127.0.0.1:9200/health")
-    print("Debug Info:    http://127.0.0.1:9200/debug/info")
+    print(f"MCP Server:    http://{mcp_host}:{mcp_port}")
+    print(f"OAuth Proxy:   http://{proxy_host}:{proxy_port}")
     print("="*50)
-    print("Press Ctrl+C to stop both servers")
 
+    # Start OAuth proxy in foreground
     try:
-        # Wait for processes
-        mcp_process.join()
-        proxy_process.join()
+        oauth_process = subprocess.Popen([
+            sys.executable, "oauth_proxy.py"
+        ])
+        oauth_process.wait()
     except KeyboardInterrupt:
-        print("\nShutting down servers...")
+        print("\nShutting down...")
+    finally:
+        # Clean up processes
         mcp_process.terminate()
-        proxy_process.terminate()
-        mcp_process.join()
-        proxy_process.join()
-        print("Servers stopped.")
+        mcp_process.wait()
 
 if __name__ == "__main__":
     main()

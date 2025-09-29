@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from dotenv import load_dotenv
 
 from fastmcp import FastMCP
@@ -126,15 +126,15 @@ def join_channel(invite_code: str) -> Dict[str, Any]:
         logger.error(f"Error joining channel: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to join channel")
 
-@mcp.tool()
-def post_message(channel_id: str, kind: str = "user", body: Optional[str] = None) -> Dict[str, Any]:
+@mcp.tool(exclude_args=["body"])
+def post_message(channel_id: str, kind: str = "user", body = None) -> Dict[str, Any]:
     """
     Post a message to a multiplayer channel.
 
     Args:
         channel_id: The channel ID (e.g., "chn_...")
         kind: Message type, defaults to "user"
-        body: Message content as a dictionary
+        body: Message content as a dictionary or string
 
     Returns:
         Message posting result with message ID and timestamp
@@ -145,9 +145,12 @@ def post_message(channel_id: str, kind: str = "user", body: Optional[str] = None
 
         if body is None:
             body_dict = {}
-        else:
-            # Convert string message to dictionary format expected by channel_manager
+        elif isinstance(body, str):
             body_dict = {"text": body}
+        elif isinstance(body, dict):
+            body_dict = body
+        else:
+            raise ValueError(f"Invalid body type: {type(body)}")
 
         session_id = get_session_id()
         if not session_id:
@@ -173,6 +176,53 @@ def post_message(channel_id: str, kind: str = "user", body: Optional[str] = None
     except Exception as e:
         logger.error(f"Error posting message: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to post message")
+
+@mcp.tool()
+def make_game_move(channel_id: str, game: str, action: str, value: int) -> Dict[str, Any]:
+    """
+    Make a game move (like guessing in a guessing game).
+
+    Args:
+        channel_id: The channel ID
+        game: Game type (e.g., "guess")
+        action: Move action (e.g., "guess", "concede")
+        value: The move value (e.g., guessed number)
+
+    Returns:
+        Message posting result
+    """
+    try:
+        move_body = {
+            "type": "move",
+            "game": game,
+            "action": action,
+            "value": value
+        }
+
+        session_id = get_session_id()
+        if not session_id:
+            raise ValueError("NO_SESSION: Missing session ID from client")
+
+        result = channel_manager.post_message(channel_id, session_id, "user", move_body)
+
+        # Dispatch message to bots
+        message = {
+            "id": result["msg_id"],
+            "channel_id": channel_id,
+            "sender": session_id,
+            "kind": "user",
+            "body": move_body,
+            "ts": result["ts"]
+        }
+        bot_manager.dispatch_message(channel_id, message)
+
+        return result
+
+    except ValueError as e:
+        raise ValueError(str(e))
+    except Exception as e:
+        logger.error(f"Error making game move: {e}")
+        raise ValueError(f"INTERNAL_ERROR: Failed to make game move")
 
 @mcp.tool()
 def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int = 25000) -> Dict[str, Any]:
