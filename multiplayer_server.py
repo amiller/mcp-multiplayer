@@ -345,8 +345,7 @@ def get_channel_info(channel_id: str) -> Dict[str, Any]:
             raise ValueError("NO_SESSION: Missing session ID from client")
 
         # Check membership
-        if not channel_manager._is_member(channel_id, session_id):
-            raise ValueError("NOT_MEMBER: Not a channel member")
+        channel_manager._check_membership(channel_id, session_id)
 
         view = channel_manager._get_channel_view(channel_id)
         bots = bot_manager.get_channel_bots(channel_id)
@@ -385,8 +384,7 @@ def get_bot_code(channel_id: str, bot_id: str) -> Dict[str, Any]:
             raise ValueError("NO_SESSION: Missing session ID from client")
 
         # Verify channel membership
-        if not channel_manager._is_member(channel_id, session_id):
-            raise ValueError("NOT_MEMBER: Not a channel member")
+        channel_manager._check_membership(channel_id, session_id)
 
         # Get bot instance
         if channel_id not in bot_manager.bot_instances:

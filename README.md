@@ -96,22 +96,26 @@ Reference pre-loaded bot implementations:
 }
 ```
 
-### 2. Inline Code (`inline_code`)
+### 2. Inline Code (`bot_code`)
 **Key Feature**: Provide bot code directly in the channel creation request for full transparency and customization:
 
-```json
-{
-  "bots": [{
-    "name": "EchoBot",
-    "version": "1.0",
-    "inline_code": "class EchoBot:\n    def __init__(self, ctx, params):\n        self.ctx = ctx\n    def on_message(self, msg):\n        if msg.get('kind') == 'user':\n            self.ctx.post('bot', {'echo': msg.get('body')})",
-    "manifest": {
-      "summary": "Echoes messages",
-      "hooks": ["on_message"],
-      "emits": ["echo"]
-    }
-  }]
-}
+```python
+create_channel(
+    name="Echo Game",
+    slots=["bot:echo", "invite:player"],
+    bot_code='''
+class EchoBot:
+    def __init__(self, ctx, params):
+        self.ctx = ctx
+
+    def on_init(self):
+        self.ctx.post('system', {'text': 'Echo ready'})
+
+    def on_message(self, msg):
+        if msg.get('kind') == 'user':
+            self.ctx.post('bot', {'echo': msg.get('body')})
+'''
+)
 ```
 
 **Bot API**:
@@ -125,6 +129,19 @@ Reference pre-loaded bot implementations:
 
 ## Example: Creating a Guessing Game
 
+### Using MCP tools (recommended for Claude):
+
+```python
+# Create channel with preset bot
+create_channel(
+    name="Guess Game",
+    slots=["bot:guess-referee", "invite:player1", "invite:player2"],
+    bot_preset="GuessBot"
+)
+```
+
+### Using curl directly:
+
 ```bash
 curl -X POST http://127.0.0.1:8100/create_channel \
   -H "Authorization: Bearer YOUR_TOKEN" \
@@ -132,17 +149,7 @@ curl -X POST http://127.0.0.1:8100/create_channel \
   -d '{
     "name": "Guess Game",
     "slots": ["bot:guess-referee", "invite:player1", "invite:player2"],
-    "bots": [{
-      "name": "GuessBot",
-      "version": "1.0",
-      "code_ref": "builtin://GuessBot",
-      "manifest": {
-        "summary": "Turn-based number guessing referee",
-        "hooks": ["on_init", "on_join", "on_message"],
-        "emits": ["prompt", "state", "turn", "judge"],
-        "params": {"mode": "number", "range": [1, 100]}
-      }
-    }]
+    "bot_preset": "GuessBot"
   }'
 ```
 
@@ -239,29 +246,45 @@ python scripts/session_test.py
 
 ## MCP Client Integration
 
-### Session Handling (SOLVED ✅)
+### Session Handling & Rejoin Tokens
 
-**✅ Session continuity now works automatically with Claude!**
-
-**How it works**:
+**How session management works**:
 1. **FastMCP generates session ID**: The MCP server creates a unique session ID for each client connection
 2. **Claude provides session ID**: Claude automatically sends this session ID in the `Mcp-Session-Id` header
-3. **Session binding**: Channels, joins, and messages are tied to Claude's consistent session ID
+3. **Session binding**: Channels, joins, and messages are tied to the current session ID
 
-**For Claude clients**: Session handling is **completely automatic**. Claude manages session continuity internally.
+**Important**: When Claude refreshes or reconnects, it gets a **new session ID**. This means you'll lose access to your previous channels.
 
-**For custom script clients**: You may need manual session handling:
-```python
-# First request (initialize)
-response = requests.post(url, json=mcp_request, headers=auth_headers)
-session_id = response.headers.get('mcp-session-id')
+**Solution: Rejoin Tokens ✅**
 
-# All subsequent requests
-headers['mcp-session-id'] = session_id
-response = requests.post(url, json=next_request, headers=headers)
+When you join a channel, you receive a `rejoin_token` in the response:
+
+```json
+{
+  "channel_id": "chn_abc123",
+  "slot_id": "s1",
+  "rejoin_token": "rejoin_xyz789...",
+  "view": { ... }
+}
 ```
 
-**Session-related errors are now resolved** - no more "Missing session ID" or "NOT_MEMBER" errors with Claude.
+**Save this rejoin_token!** You can use it to rejoin the same channel after reconnecting:
+
+```bash
+# Use the same join_channel tool with your rejoin_token
+join_channel(invite_code="rejoin_xyz789...")
+```
+
+**What happens on rejoin**:
+- Your new session takes over your old slot
+- Your old session is automatically kicked out
+- You regain access to all channel operations
+- Bot state and message history are preserved
+
+**Best practices**:
+- Always save the `rejoin_token` from join responses in your context
+- If you get a `NOT_MEMBER` error, use your `rejoin_token` to reconnect
+- The rejoin token is permanent - you can use it multiple times
 
 ### Claude OAuth Flow (DETAILED)
 

@@ -261,8 +261,7 @@ class ChannelManager:
                 raise ValueError("CHANNEL_NOT_FOUND")
 
             # Check if session is a member
-            if not self._is_member(channel_id, session_id):
-                raise ValueError("NOT_MEMBER: You are not a member of this channel. If you previously joined, you may have reconnected with a new session. Use join_channel with your rejoin_token to rejoin.")
+            self._check_membership(channel_id, session_id)
 
             msg_id = self._next_message_id()
             ts = datetime.utcnow().isoformat()
@@ -292,8 +291,7 @@ class ChannelManager:
             if channel_id not in self.channels:
                 raise ValueError("CHANNEL_NOT_FOUND")
 
-            if not self._is_member(channel_id, session_id):
-                raise ValueError("NOT_MEMBER: You are not a member of this channel. If you previously joined, you may have reconnected with a new session. Use join_channel with your rejoin_token to rejoin.")
+            self._check_membership(channel_id, session_id)
 
             channel = self.channels[channel_id]
             messages = channel["messages"]
@@ -363,6 +361,11 @@ class ChannelManager:
                 "ok": True,
                 "view": self._get_channel_view(channel_id)
             }
+
+    def _check_membership(self, channel_id: str, session_id: str):
+        """Check if session is a member, raise ValueError if not."""
+        if not self._is_member(channel_id, session_id):
+            raise ValueError("NOT_MEMBER: You are not a member of this channel. If you previously joined, you may have reconnected with a new session. Use join_channel with your rejoin_token to rejoin.")
 
     def _is_member(self, channel_id: str, session_id: str) -> bool:
         """Check if session is a member of the channel."""
