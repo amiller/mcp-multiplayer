@@ -11,6 +11,7 @@ External HTTPS → dstack-gateway → OAuth Proxy (port 8100) → MCP Server (po
 
 Environment variables:
 - `USE_SSL=false` - dstack-gateway handles HTTPS termination
+- `DOMAIN=<app-id>-8100.dstack-prod5.phala.network` - **CRITICAL**: Must set to actual domain
 - `PROXY_HOST=0.0.0.0` - bind to all interfaces in container
 - `MCP_HOST=127.0.0.1` - internal MCP server binding
 - `PROXY_PORT=8100` - OAuth proxy port
@@ -31,9 +32,9 @@ docker push YOUR_REGISTRY/mcp-multiplayer
 docker images --digests YOUR_REGISTRY/mcp-multiplayer
 ```
 
-Update `docker-compose-deploy.yml` with registry and SHA256 hash, then deploy:
+Update `docker-compose-deploy.yml` with registry, SHA256 hash, and **actual domain**, then deploy:
 ```bash
-phala deploy docker-compose-deploy.yml --node 3
+phala deploy docker-compose-deploy.yml --node-id 3
 ```
 
 Verify deployment:
@@ -41,9 +42,22 @@ Verify deployment:
 curl https://YOUR_URL/.well-known/oauth-authorization-server
 ```
 
+## Claude MCP Client Compatibility
+
+**OAuth URL Fix**: The service automatically detects reverse proxy deployment and generates correct HTTPS URLs for OAuth endpoints, ensuring Claude's OAuth client can authenticate successfully.
+
+**URL Pattern**: Deployed apps are accessible at:
+```
+https://<app-id>-8100.dstack-prod5.phala.network
+```
+
+**Critical Setup**: Set `DOMAIN` environment variable to the actual dstack domain, not `localhost`. The OAuth proxy will automatically generate HTTPS URLs for external access while maintaining internal HTTP communication.
+
 ## Notes
 
 - Only port 8100 (OAuth proxy) exposed externally
 - MCP server runs on port 8201 internally
 - Dstack provides HTTPS termination, no SSL certificates needed inside container
+- OAuth endpoints automatically return HTTPS URLs when `DOMAIN` is set to real domain
+- Compatible with Claude's OAuth 2.1 security requirements
 - Based on successful deployment pattern from ambient_mcp project
