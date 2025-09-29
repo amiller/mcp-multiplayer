@@ -91,7 +91,9 @@ def create_channel(
         )
 
     Returns:
-        Channel creation result with channel_id and invite codes. If bot attachment fails, includes bot_errors array.
+        Channel creation result with channel_id and invite codes.
+        IMPORTANT: Use join_channel with an invite code to join - you'll receive a rejoin_token.
+        Save the rejoin_token to rejoin if you disconnect or refresh your session.
     """
     try:
         if not name or not slots:
@@ -166,13 +168,14 @@ def create_channel(
 @mcp.tool()
 def join_channel(invite_code: str) -> Dict[str, Any]:
     """
-    Join a multiplayer channel using an invite code.
+    Join or rejoin a multiplayer channel using an invite code or rejoin token.
 
     Args:
-        invite_code: The invite code for the channel (e.g., "inv_...")
+        invite_code: The invite code (e.g., "inv_...") or rejoin token (e.g., "rejoin_...")
 
     Returns:
-        Join result with channel info and user slot assignment
+        Join result with channel_id, slot_id, rejoin_token (save this!), and view.
+        The rejoin_token can be used to rejoin if you disconnect or refresh.
     """
     try:
         if not invite_code:

@@ -40,6 +40,7 @@ class ChannelManager:
     def __init__(self):
         self.channels: Dict[str, Dict] = {}
         self.invites: Dict[str, Dict] = {}  # invite_code -> {channel_id, slot_id}
+        self.rejoin_tokens: Dict[str, Dict] = {}  # rejoin_token -> {channel_id, slot_id}
         self.session_slots: Dict[str, Dict] = {}  # session_id -> {channel_id, slot_id}
         self.message_counter = 0
         self.lock = threading.RLock()
@@ -49,6 +50,9 @@ class ChannelManager:
 
     def _generate_invite_code(self) -> str:
         return f"inv_{secrets.token_urlsafe(16)}"
+
+    def _generate_rejoin_token(self) -> str:
+        return f"rejoin_{secrets.token_urlsafe(16)}"
 
     def _next_message_id(self) -> int:
         with self.lock:
@@ -133,14 +137,59 @@ class ChannelManager:
                 "view": self._get_channel_view(channel_id)
             }
 
-    def join_channel(self, invite_code: str, session_id: str) -> Dict:
+    def join_channel(self, invite_code: str, session_id: str, rejoin_token: Optional[str] = None) -> Dict:
         """
-        Join a channel using an invite code.
+        Join a channel using an invite code or rejoin token.
+
+        Args:
+            invite_code: Invite code or rejoin token
+            session_id: Current session ID
+            rejoin_token: Optional rejoin token parameter (for clarity)
 
         Returns:
-            {channel_id, slot_id, view: ChannelView}
+            {channel_id, slot_id, rejoin_token, view: ChannelView}
         """
         with self.lock:
+            # Check if this is a rejoin token
+            token = rejoin_token or invite_code
+            if token.startswith("rejoin_"):
+                if token not in self.rejoin_tokens:
+                    raise ValueError("REJOIN_TOKEN_INVALID")
+
+                token_info = self.rejoin_tokens[token]
+                channel_id = token_info["channel_id"]
+                slot_id = token_info["slot_id"]
+
+                if channel_id not in self.channels:
+                    raise ValueError("CHANNEL_NOT_FOUND")
+
+                channel = self.channels[channel_id]
+                slot = next((s for s in channel["slots"] if s.slot_id == slot_id), None)
+
+                if not slot:
+                    raise ValueError("SLOT_NOT_FOUND")
+
+                # Unbind old session if exists
+                if slot.filled_by and slot.filled_by != session_id:
+                    old_session = slot.filled_by
+                    if old_session in self.session_slots:
+                        del self.session_slots[old_session]
+
+                # Bind new session to slot
+                slot.filled_by = session_id
+                self.session_slots[session_id] = {
+                    "channel_id": channel_id,
+                    "slot_id": slot_id
+                }
+
+                return {
+                    "channel_id": channel_id,
+                    "slot_id": slot_id,
+                    "rejoin_token": token,
+                    "view": self._get_channel_view(channel_id)
+                }
+
+            # Original invite code logic
             if invite_code not in self.invites:
                 raise ValueError("INVITE_INVALID")
 
@@ -160,9 +209,17 @@ class ChannelManager:
             if slot.filled_by is not None:
                 # Check if it's the same session (idempotent)
                 if slot.filled_by == session_id:
+                    # Get existing rejoin token
+                    existing_token = None
+                    for token, info in self.rejoin_tokens.items():
+                        if info["channel_id"] == channel_id and info["slot_id"] == slot_id:
+                            existing_token = token
+                            break
+
                     return {
                         "channel_id": channel_id,
                         "slot_id": slot_id,
+                        "rejoin_token": existing_token,
                         "view": self._get_channel_view(channel_id)
                     }
                 else:
@@ -175,12 +232,20 @@ class ChannelManager:
                 "slot_id": slot_id
             }
 
+            # Generate rejoin token
+            new_rejoin_token = self._generate_rejoin_token()
+            self.rejoin_tokens[new_rejoin_token] = {
+                "channel_id": channel_id,
+                "slot_id": slot_id
+            }
+
             # Remove the invite code (one-time use)
             del self.invites[invite_code]
 
             return {
                 "channel_id": channel_id,
                 "slot_id": slot_id,
+                "rejoin_token": new_rejoin_token,
                 "view": self._get_channel_view(channel_id)
             }
 
@@ -197,7 +262,7 @@ class ChannelManager:
 
             # Check if session is a member
             if not self._is_member(channel_id, session_id):
-                raise ValueError("NOT_MEMBER")
+                raise ValueError("NOT_MEMBER: You are not a member of this channel. If you previously joined, you may have reconnected with a new session. Use join_channel with your rejoin_token to rejoin.")
 
             msg_id = self._next_message_id()
             ts = datetime.utcnow().isoformat()
@@ -228,7 +293,7 @@ class ChannelManager:
                 raise ValueError("CHANNEL_NOT_FOUND")
 
             if not self._is_member(channel_id, session_id):
-                raise ValueError("NOT_MEMBER")
+                raise ValueError("NOT_MEMBER: You are not a member of this channel. If you previously joined, you may have reconnected with a new session. Use join_channel with your rejoin_token to rejoin.")
 
             channel = self.channels[channel_id]
             messages = channel["messages"]
