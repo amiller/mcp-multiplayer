@@ -56,6 +56,7 @@ python scripts/session_test.py
 
 The client automatically handles:
 - ✅ OAuth authentication (client registration → token generation)
+- ✅ Token persistence (`mcp_tokens.json` for caching between runs)
 - ✅ MCP session handshake (`initialize` → `notifications/initialized`)
 - ✅ JSON-RPC formatting with required `params: {}` fields
 - ✅ SSE response parsing for `data: ` prefixed event streams

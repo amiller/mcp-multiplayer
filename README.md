@@ -109,9 +109,12 @@ MCP_BASE_URL=http://127.0.0.1:8100
 
 MCP_CLIENT_NAME=MCP Script Client
 MCP_VERIFY_SSL=false
+# MCP_TOKEN_FILE=mcp_tokens.json  # Optional: custom token cache location
 ```
 
 Switch between local and remote by commenting/uncommenting the `MCP_BASE_URL` lines.
+
+**Token Persistence**: OAuth tokens are automatically cached in `mcp_tokens.json` to avoid re-authentication between script runs.
 
 ## Game Flow
 
