@@ -91,7 +91,9 @@ def create_channel(
         )
 
     Returns:
-        Channel creation result with channel_id and invite codes. If bot attachment fails, includes bot_errors array.
+        Channel creation result with channel_id and invite codes.
+        IMPORTANT: Use join_channel with an invite code to join - you'll receive a rejoin_token.
+        Save the rejoin_token to rejoin if you disconnect or refresh your session.
     """
     try:
         if not name or not slots:
@@ -166,13 +168,14 @@ def create_channel(
 @mcp.tool()
 def join_channel(invite_code: str) -> Dict[str, Any]:
     """
-    Join a multiplayer channel using an invite code.
+    Join or rejoin a multiplayer channel using an invite code or rejoin token.
 
     Args:
-        invite_code: The invite code for the channel (e.g., "inv_...")
+        invite_code: The invite code (e.g., "inv_...") or rejoin token (e.g., "rejoin_...")
 
     Returns:
-        Join result with channel info and user slot assignment
+        Join result with channel_id, slot_id, rejoin_token (save this!), and view.
+        The rejoin_token can be used to rejoin if you disconnect or refresh.
     """
     try:
         if not invite_code:
@@ -195,15 +198,15 @@ def join_channel(invite_code: str) -> Dict[str, Any]:
         logger.error(f"Error joining channel: {e}")
         raise ValueError(f"INTERNAL_ERROR: Failed to join channel")
 
-@mcp.tool(exclude_args=["body"])
-def post_message(channel_id: str, kind: str = "user", body = None) -> Dict[str, Any]:
+@mcp.tool()
+def post_message(channel_id: str, body: str = "", kind: str = "user") -> Dict[str, Any]:
     """
     Post a message to a multiplayer channel.
 
     Args:
         channel_id: The channel ID (e.g., "chn_...")
+        body: Message text content
         kind: Message type, defaults to "user"
-        body: Message content as a dictionary or string
 
     Returns:
         Message posting result with message ID and timestamp
@@ -212,14 +215,10 @@ def post_message(channel_id: str, kind: str = "user", body = None) -> Dict[str, 
         if not channel_id:
             raise ValueError("channel_id required")
 
-        if body is None:
-            body_dict = {}
-        elif isinstance(body, str):
+        if body:
             body_dict = {"text": body}
-        elif isinstance(body, dict):
-            body_dict = body
         else:
-            raise ValueError(f"Invalid body type: {type(body)}")
+            body_dict = {}
 
         session_id = get_session_id()
         if not session_id:
@@ -300,7 +299,7 @@ def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int
 
     Args:
         channel_id: The channel ID
-        cursor: Optional last seen message ID
+        cursor: Optional last seen message ID (integer). Omit or pass null to get all messages from the beginning.
         timeout_ms: Long-poll timeout in milliseconds
 
     Returns:
