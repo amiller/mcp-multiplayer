@@ -9,10 +9,13 @@ import threading
 import importlib.util
 import tempfile
 import os
+import signal
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Type
 from pathlib import Path
+from RestrictedPython import compile_restricted, safe_builtins, limited_builtins, safe_globals
+from RestrictedPython.Guards import guarded_iter_unpack_sequence, safer_getattr
 
 @dataclass
 class BotManifest:
@@ -40,6 +43,9 @@ class BotContext:
         self.bot_id = bot_id
         self.bot_manager = bot_manager
         self.env = {}
+        # Bot-specific tmpfs workspace
+        self.workspace = f"/tmp/bot_workspace/{channel_id}_{bot_id}"
+        os.makedirs(self.workspace, exist_ok=True)
 
     def post(self, kind: str, body: Dict[str, Any]):
         """Post a message to the channel."""
@@ -212,18 +218,36 @@ class BotManager:
             raise ValueError("Bot definition must have either code_ref or inline_code")
 
     def _compile_inline_code(self, code: str, bot_name: str) -> Type:
-        """Compile inline code and extract bot class."""
-        # Create a temporary module
-        module_globals = {}
-        exec(code, module_globals)
+        """Compile inline code with RestrictedPython and extract bot class."""
+        # Compile with RestrictedPython
+        byte_code = compile_restricted(
+            code,
+            filename=f'<bot:{bot_name}>',
+            mode='exec'
+        )
 
-        # Look for the bot class (try bot_name or any class)
+        if hasattr(byte_code, 'errors') and byte_code.errors:
+            raise ValueError(f"Compilation errors: {byte_code.errors}")
+
+        # Create restricted globals with safe imports
+        restricted_globals = {
+            '__builtins__': self._create_safe_builtins(),
+            '_getiter_': guarded_iter_unpack_sequence,
+            '_getattr_': safer_getattr,
+            '__name__': f'bot_{bot_name}',
+            '__metaclass__': type,
+        }
+
+        # Execute in restricted environment
+        code_obj = byte_code if isinstance(byte_code, type(compile('', '', 'exec'))) else byte_code.code
+        exec(code_obj, restricted_globals)
+
+        # Look for the bot class
         bot_class = None
-        if bot_name in module_globals:
-            bot_class = module_globals[bot_name]
+        if bot_name in restricted_globals:
+            bot_class = restricted_globals[bot_name]
         else:
-            # Find first class-like object
-            for name, obj in module_globals.items():
+            for name, obj in restricted_globals.items():
                 if (hasattr(obj, "__init__") and callable(obj) and
                     not name.startswith("_") and name[0].isupper()):
                     bot_class = obj
@@ -233,6 +257,32 @@ class BotManager:
             raise ValueError(f"No bot class found in inline code for {bot_name}")
 
         return bot_class
+
+    def _create_safe_builtins(self):
+        """Create safe builtins for bot execution."""
+        safe = safe_builtins.copy()
+        safe.update(limited_builtins)
+
+        # Allow safe imports for network/TLS bots
+        def _safe_import(name, *args, **kwargs):
+            allowed_modules = {
+                'json', 'math', 'random', 'datetime', 'time',
+                'socket', 'ssl', 'http', 'urllib', 'requests',
+                're', 'base64', 'hashlib', 'hmac', 'secrets',
+                'collections', 'itertools', 'functools',
+                'io', 'traceback', 'sys'
+            }
+
+            base_module = name.split('.')[0]
+            if base_module not in allowed_modules:
+                raise ImportError(f"Import of '{name}' is not allowed")
+
+            return __import__(name, *args, **kwargs)
+
+        safe['__import__'] = _safe_import
+        safe['__builtins__'] = safe
+
+        return safe
 
     def compute_code_hash(self, bot_def: BotDefinition) -> str:
         """Compute SHA256 hash of bot code."""
@@ -280,7 +330,7 @@ class BotManager:
                     print(f"Error dispatching join to bot {bot_id}: {e}")
 
     def _call_bot_hook(self, channel_id: str, bot_id: str, hook_name: str, *args):
-        """Call a specific hook on a bot."""
+        """Call a specific hook on a bot with timeout."""
         if channel_id not in self.bot_instances:
             return
 
@@ -299,7 +349,21 @@ class BotManager:
             hook_method = getattr(bot_obj, hook_name)
             if callable(hook_method):
                 try:
-                    hook_method(*args)
+                    # Set timeout for bot execution (5 seconds)
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"Bot hook {hook_name} exceeded 5 second timeout")
+
+                    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(5)
+
+                    try:
+                        hook_method(*args)
+                    finally:
+                        signal.alarm(0)
+                        signal.signal(signal.SIGALRM, old_handler)
+
+                except TimeoutError as e:
+                    print(f"Timeout in bot {bot_id} hook {hook_name}: {e}")
                 except Exception as e:
                     print(f"Error in bot {bot_id} hook {hook_name}: {e}")
 

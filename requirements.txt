@@ -3,3 +3,4 @@ authlib
 requests
 flask
 python-dotenv
+RestrictedPython

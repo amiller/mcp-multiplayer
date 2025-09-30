@@ -6,6 +6,8 @@ services:
       - "${MCP_PORT:-8201}:${MCP_PORT:-8201}"
     volumes:
       - ./data:/app/data
+    tmpfs:
+      - /tmp/bot_workspace:size=100M,uid=1000,gid=1000
     environment:
       - DOMAIN=${DOMAIN:-localhost}
       - USE_SSL=${USE_SSL:-false}

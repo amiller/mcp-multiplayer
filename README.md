@@ -130,6 +130,44 @@ class EchoBot:
 
 **Test**: `python scripts/test_inline_bot.py`
 
+### Bot Sandboxing
+
+Inline bot code runs in a **RestrictedPython sandbox** with the following security measures:
+
+**Execution Environment**:
+- Runs as non-root user (`botuser`, uid 1000)
+- 5-second timeout per bot hook execution
+- Isolated tmpfs workspace at `ctx.workspace` (100MB limit)
+
+**Allowed Imports** (for network/TLS bots):
+- Core: `json`, `math`, `random`, `datetime`, `time`, `re`, `base64`, `hashlib`, `hmac`, `secrets`
+- Network: `socket`, `ssl`, `http`, `urllib`, `requests`
+- Utilities: `collections`, `itertools`, `functools`, `io`, `traceback`, `sys`
+
+**Blocked Operations**:
+- ❌ `os` and `subprocess` modules
+- ❌ `eval()` and `exec()` calls
+- ❌ Underscore-prefixed names (`_private`, `__dunder__`)
+- ❌ Direct `__builtins__` access
+
+**Example - This will be blocked**:
+```python
+import os  # ❌ Import of 'os' is not allowed
+eval("2+2")  # ❌ Eval calls are not allowed
+```
+
+**Example - This works**:
+```python
+import random
+import json
+import socket  # ✅ Network access allowed for TLS bots
+
+class MyBot:
+    def on_message(self, msg):
+        data = json.dumps({"roll": random.randint(1, 6)})
+        self.ctx.post("bot", {"result": data})
+```
+
 ## Example: Creating a Guessing Game
 
 ### Using MCP tools (recommended for Claude):
