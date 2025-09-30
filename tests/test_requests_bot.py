@@ -39,7 +39,27 @@ class RequestsBot:
 
     def on_message(self, msg):
         if msg.get("kind") == "user":
-            self.ctx.post("bot", {"echo": msg.get("body")})
+            body = msg.get("body", {})
+            # Handle both dict and string body formats
+            if isinstance(body, dict):
+                text = body.get("text", "")
+            else:
+                text = str(body)
+
+            if text == "price":
+                # Test requests in on_message too
+                try:
+                    resp = requests.get("https://api.coinbase.com/v2/exchange-rates?currency=ETH")
+                    data = resp.json()
+                    eth_usd = data["data"]["rates"]["USD"]
+                    self.ctx.post("bot", {
+                        "type": "price_response",
+                        "message": f"ETH price: ${eth_usd}"
+                    })
+                except Exception as e:
+                    self.ctx.post("bot", {"type": "error", "message": str(e)})
+            else:
+                self.ctx.post("bot", {"echo": text})
 """
 
     try:
@@ -62,20 +82,46 @@ class RequestsBot:
             client.call_tool("join_channel", {"invite_code": invite})
 
             sync_resp = client.call_tool("sync_messages", {"channel_id": channel_id})
+            cursor = sync_resp["cursor"]
 
+            # Check on_init response
+            print("\n📨 Testing on_init (BTC price)...")
             for msg in sync_resp["messages"]:
                 if msg.get("kind") == "bot":
                     body = msg.get("body", {})
-                    print(f"\n📨 Bot response:")
-                    print(f"   Type: {body.get('type')}")
-                    print(f"   Message: {body.get('message')}")
-
                     if "BTC price" in body.get("message", ""):
-                        print("\n✅ Requests module works in sandbox!")
-                        return 0
+                        print(f"✅ on_init: {body.get('message')}")
                     elif "Failed" in body.get("message", ""):
-                        print(f"\n❌ Requests failed: {body.get('message')}")
+                        print(f"❌ on_init failed: {body.get('message')}")
                         return 1
+
+            # Test on_message with requests
+            print("\n📨 Testing on_message (ETH price)...")
+            client.call_tool("post_message", {
+                "channel_id": channel_id,
+                "body": "price"
+            })
+
+            sync_resp = client.call_tool("sync_messages", {
+                "channel_id": channel_id,
+                "cursor": cursor
+            })
+
+            found_response = False
+            for msg in sync_resp["messages"]:
+                if msg.get("kind") == "bot":
+                    body = msg.get("body", {})
+                    print(f"   Bot message: {body}")
+                    if "ETH price" in body.get("message", ""):
+                        print(f"✅ on_message: {body.get('message')}")
+                        print("\n✅ Requests module works in both on_init and on_message!")
+                        found_response = True
+                    elif body.get("type") == "error":
+                        print(f"❌ on_message failed: {body.get('message')}")
+                        return 1
+
+            if found_response:
+                return 0
         else:
             print(f"❌ Failed to create channel: {create_resp}")
             return 1

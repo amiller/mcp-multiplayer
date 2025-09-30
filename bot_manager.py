@@ -268,6 +268,20 @@ class BotManager:
         safe = safe_builtins.copy()
         safe.update(limited_builtins)
 
+        # Add commonly needed builtins that are safe
+        safe['hasattr'] = hasattr
+        safe['isinstance'] = isinstance
+        safe['issubclass'] = issubclass
+        safe['type'] = type
+        safe['dict'] = dict
+        safe['list'] = list
+        safe['tuple'] = tuple
+        safe['set'] = set
+        safe['str'] = str
+        safe['int'] = int
+        safe['float'] = float
+        safe['bool'] = bool
+
         # Allow safe imports for network/TLS bots
         def _safe_import(name, *args, **kwargs):
             allowed_modules = {
