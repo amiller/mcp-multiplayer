@@ -140,9 +140,9 @@ Inline bot code runs in a **RestrictedPython sandbox** with the following securi
 - Isolated tmpfs workspace at `ctx.workspace` (100MB limit)
 
 **Allowed Imports** (for network/TLS bots):
-- Core: `json`, `math`, `random`, `datetime`, `time`, `re`, `base64`, `hashlib`, `hmac`, `secrets`
-- Network: `socket`, `ssl`, `http`, `urllib`, `requests`
-- Utilities: `collections`, `itertools`, `functools`, `io`, `traceback`, `sys`
+- Core: `json`, `math`, `random`, `datetime`, `time`, `re`, `base64`, `hashlib`, `hmac`, `secrets`, `typing`, `copy`
+- Network: `socket`, `ssl`, `http`, `urllib`, `urllib3`, `requests` (+ dependencies: `certifi`, `charset_normalizer`, `idna`)
+- Utilities: `collections`, `itertools`, `functools`, `io`, `traceback`, `sys`, `email`, `warnings`, `weakref`
 
 **Blocked Operations**:
 - ❌ `os` and `subprocess` modules
@@ -160,13 +160,26 @@ eval("2+2")  # ❌ Eval calls are not allowed
 ```python
 import random
 import json
-import socket  # ✅ Network access allowed for TLS bots
+import requests  # ✅ Network requests allowed
 
-class MyBot:
+class BitcoinBot:
+    def on_init(self):
+        # Fetch BTC price from public API
+        resp = requests.get("https://api.coinbase.com/v2/exchange-rates?currency=BTC")
+        data = resp.json()
+        price = data["data"]["rates"]["USD"]
+
+        self.ctx.post("bot", {
+            "type": "ready",
+            "message": f"BTC price: ${price}"
+        })
+
     def on_message(self, msg):
-        data = json.dumps({"roll": random.randint(1, 6)})
-        self.ctx.post("bot", {"result": data})
+        roll = random.randint(1, 6)
+        self.ctx.post("bot", {"roll": roll})
 ```
+
+The bot has access to `self.ctx.workspace` - a tmpfs directory for temporary files.
 
 ## Example: Creating a Guessing Game
 

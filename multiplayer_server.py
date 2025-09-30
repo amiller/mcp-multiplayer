@@ -61,13 +61,16 @@ def create_channel(
     Args:
         name: Channel name
         slots: List of slot types like ["bot:guess-referee", "invite:player1", "invite:player2"]
-        bot_code: Optional Python code for inline bot. Must define a class with:
+        bot_code: Optional Python code for inline bot (runs in RestrictedPython sandbox). Must define a class with:
             - __init__(self, ctx, params): Initialize with context
             - on_init(): Called when bot attaches
             - on_join(player_id): Called when player joins
             - on_message(msg): Called on new messages
             - self.ctx.post(kind, body): Post messages to channel
             - self.ctx.get_state() / set_state(dict): Persist state (bots recreated each message)
+            - self.ctx.workspace: tmpfs directory for bot temp files
+            Allowed imports: json, random, requests, socket, ssl, hashlib, datetime, etc.
+            Blocked: os, subprocess, eval, exec, underscore-prefixed names
         bot_preset: Optional preset bot name like "GuessBot" or "BlackjackBot" (ignored if bot_code provided)
 
     Example with preset:

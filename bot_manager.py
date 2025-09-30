@@ -233,7 +233,12 @@ class BotManager:
         restricted_globals = {
             '__builtins__': self._create_safe_builtins(),
             '_getiter_': guarded_iter_unpack_sequence,
+            '_iter_unpack_sequence_': guarded_iter_unpack_sequence,
             '_getattr_': safer_getattr,
+            '_getitem_': lambda obj, index: obj[index],
+            '_print_': lambda x: print(x),
+            '_write_': lambda x: x,
+            '_inplacevar_': lambda op, x, y: op(x, y),
             '__name__': f'bot_{bot_name}',
             '__metaclass__': type,
         }
@@ -266,11 +271,17 @@ class BotManager:
         # Allow safe imports for network/TLS bots
         def _safe_import(name, *args, **kwargs):
             allowed_modules = {
+                # Core Python
                 'json', 'math', 'random', 'datetime', 'time',
-                'socket', 'ssl', 'http', 'urllib', 'requests',
                 're', 'base64', 'hashlib', 'hmac', 'secrets',
                 'collections', 'itertools', 'functools',
-                'io', 'traceback', 'sys'
+                'io', 'traceback', 'sys', 'typing',
+                # Network
+                'socket', 'ssl', 'http', 'urllib', 'urllib3', 'requests',
+                # Requests dependencies
+                'certifi', 'charset_normalizer', 'idna',
+                # Other utilities
+                'email', 'warnings', 'weakref', 'copy'
             }
 
             base_module = name.split('.')[0]
