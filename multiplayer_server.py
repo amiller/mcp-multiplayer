@@ -318,14 +318,17 @@ def sync_messages(channel_id: str, cursor: Optional[int] = None, timeout_ms: int
     """
     Get messages from a channel since cursor.
 
+    Cursor is your watermark - the highest message ID you've seen so far (default: 0).
+    Returns all messages with ID > cursor, and new cursor to use for next call.
+    The cursor only advances when new messages are returned.
+
     Args:
         channel_id: The channel ID
-        cursor: Optional last seen message ID (integer). Omit entirely or pass None on first call.
-                Then use the returned cursor value for subsequent calls. Must be int or None.
+        cursor: Your watermark - highest message ID you've seen (default: 0). Pass None on first call.
         timeout_ms: Long-poll timeout in milliseconds
 
     Returns:
-        Dict with 'messages' array, 'cursor' (int to use in next call), and optional 'view'
+        Dict with 'messages' array, 'cursor' (int watermark for next call), and optional 'view'
     """
     try:
         if not channel_id:

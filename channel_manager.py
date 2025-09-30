@@ -284,6 +284,9 @@ class ChannelManager:
         """
         Get messages since cursor with optional long-polling.
 
+        Cursor is your watermark - the highest message ID you've seen so far.
+        Returns all messages with ID > cursor, and new cursor for next call.
+
         Returns:
             {messages: [Message], cursor: int, view: ChannelView | null}
         """
@@ -307,8 +310,8 @@ class ChannelManager:
                 # For now, just return empty (real implementation would use threading.Event)
                 pass
 
-            # Determine new cursor
-            new_cursor = max((msg.id for msg in messages), default=cursor)
+            # New cursor is highest message ID you've now seen
+            new_cursor = new_messages[-1].id if new_messages else cursor
 
             # Include view if channel composition changed (simplified check)
             view = self._get_channel_view(channel_id) if not new_messages else None
