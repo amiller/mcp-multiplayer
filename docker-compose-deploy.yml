@@ -8,7 +8,7 @@
 
 services:
   mcp-multiplayer:
-    image: socrates1024/mcp-multiplayer@sha256:961918aad636ab0e15af2a4d5dd74090b08eea2c19d7a5575ceff033d62d550d
+    image: socrates1024/mcp-multiplayer@sha256:eb3b918a1f5ac185f3ec5e271874bc146c934fd5a12884db5324d7b99c97131a
     ports:
       - "8100:8100"
     environment:
