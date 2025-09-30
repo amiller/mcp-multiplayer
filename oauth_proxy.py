@@ -42,20 +42,27 @@ def get_base_url(request):
     1. Direct HTTP access (local dev)
     2. Direct HTTPS access (USE_SSL=true)
     3. HTTPS proxy with internal HTTP (dstack/reverse proxy)
+    4. Dynamic detection from Host header for dstack deployments
     """
     domain = os.getenv('DOMAIN', 'localhost')
     use_ssl = os.getenv('USE_SSL', 'false').lower() == 'true'
 
-    # If DOMAIN is set to a real domain (not localhost), assume HTTPS proxy
+    # If DOMAIN is explicitly set to a real domain, use it
     if domain != 'localhost' and '.' in domain:
         return f"https://{domain}"
+
+    # For dstack deployments, detect from Host header
+    host = request.host
+    if host and 'dstack-' in host and '.phala.network' in host:
+        # This is a dstack deployment, use HTTPS with the actual host
+        return f"https://{host}"
 
     # For localhost, respect USE_SSL setting
     scheme = 'https' if use_ssl else 'http'
 
     # For localhost, use the actual host from request
     if domain == 'localhost':
-        return f"{scheme}://{request.host}"
+        return f"{scheme}://{host}"
 
     # Fallback to domain setting
     return f"{scheme}://{domain}"

@@ -8,7 +8,7 @@
 
 services:
   mcp-multiplayer:
-    image: socrates1024/mcp-multiplayer@sha256:29afde9128cd063d65a418f11f77e210b5c95a83f49a1c61d538de956b2e1b11
+    image: socrates1024/mcp-multiplayer@sha256:eb3b918a1f5ac185f3ec5e271874bc146c934fd5a12884db5324d7b99c97131a
     ports:
       - "8100:8100"
     environment:
@@ -17,5 +17,5 @@ services:
       - MCP_HOST=127.0.0.1
       - MCP_PORT=8201
       - USE_SSL=false
-      - DOMAIN=50e45f6a1bb2722b92c316dc22b6c01f01bac4a6-8100.dstack-prod5.phala.network
+      # DOMAIN will be auto-detected from Host header for dstack deployments
     restart: unless-stopped
